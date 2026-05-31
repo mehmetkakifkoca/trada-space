@@ -236,8 +236,138 @@ export default function DashboardPage() {
     addAttendanceLog,
     timeAllocations = [],
     addTodo,
-    todos
+    todos,
+    invoices = []
   } = useDataStore();
+
+  // Financial Dashboard Filters State
+  const [timeFilter, setTimeFilter] = useState<"ALL" | "TODAY" | "THIS_WEEK" | "THIS_MONTH" | "THIS_YEAR" | "CUSTOM">("THIS_MONTH");
+  const [customStartDate, setCustomStartDate] = useState("");
+  const [customEndDate, setCustomEndDate] = useState("");
+  const [categoryFilter, setCategoryFilter] = useState<string>("ALL");
+  const [statusFilter, setStatusFilter] = useState<string>("ALL");
+
+  const formatCurrency = (val: number) => {
+    return new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR' }).format(val);
+  };
+
+  const financialData = useMemo(() => {
+    const today = new Date();
+    
+    const parseDateStr = (dateStr: string) => {
+      const parts = dateStr.split("-");
+      if (parts.length === 3) {
+        return new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
+      }
+      return new Date(dateStr);
+    };
+
+    const isInRange = (invDateStr: string) => {
+      if (!invDateStr) return false;
+      const date = parseDateStr(invDateStr);
+      if (isNaN(date.getTime())) return false;
+
+      const startOfToday = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+      startOfToday.setHours(0, 0, 0, 0);
+      const endOfToday = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+      endOfToday.setHours(23, 59, 59, 999);
+
+      switch (timeFilter) {
+        case "TODAY":
+          return date >= startOfToday && date <= endOfToday;
+        case "THIS_WEEK": {
+          const currentDay = today.getDay();
+          const distanceToMonday = currentDay === 0 ? -6 : 1 - currentDay;
+          const monday = new Date(today.getFullYear(), today.getMonth(), today.getDate() + distanceToMonday);
+          monday.setHours(0, 0, 0, 0);
+          const sunday = new Date(monday.getTime() + 7 * 24 * 60 * 60 * 1000 - 1);
+          return date >= monday && date <= sunday;
+        }
+        case "THIS_MONTH":
+          return date.getFullYear() === today.getFullYear() && date.getMonth() === today.getMonth();
+        case "THIS_YEAR":
+          return date.getFullYear() === today.getFullYear();
+        case "CUSTOM": {
+          if (!customStartDate || !customEndDate) return true;
+          const start = new Date(customStartDate);
+          start.setHours(0, 0, 0, 0);
+          const end = new Date(customEndDate);
+          end.setHours(23, 59, 59, 999);
+          return date >= start && date <= end;
+        }
+        default:
+          return true;
+      }
+    };
+
+    const matchesStatus = (status: string) => {
+      if (statusFilter === "ALL") return true;
+      if (statusFilter === "OFFEN") return status === "OFFEN";
+      if (statusFilter === "BEZAHLT") return status.startsWith("BEZAHLT");
+      if (statusFilter === "ENTWURF") return status === "ENTWURF";
+      if (statusFilter === "OVERDUE") return status === "OVERDUE";
+      if (statusFilter === "BAR") return status === "BEZAHLT_BAR";
+      if (statusFilter === "BANK") return status === "BEZAHLT_BANK";
+      return true;
+    };
+
+    const baseFiltered = invoices.filter(inv => {
+      return isInRange(inv.date) && matchesStatus(inv.status);
+    });
+
+    let netSum = 0;
+    let grossSum = 0;
+    const finalFilteredInvoices: any[] = [];
+
+    baseFiltered.forEach(inv => {
+      if (categoryFilter === "ALL") {
+        netSum += inv.amountNet || 0;
+        grossSum += inv.amountGross || 0;
+        finalFilteredInvoices.push(inv);
+      } else {
+        let matchingNet = 0;
+        let matchingGross = 0;
+        let hasMatchingPosition = false;
+
+        if (inv.positions && inv.positions.length > 0) {
+          inv.positions.forEach(pos => {
+            if (pos.category === categoryFilter) {
+              hasMatchingPosition = true;
+              const posNet = (pos.priceNet || 0) * (pos.quantity || 1);
+              const discount = pos.discountPercent ? (posNet * pos.discountPercent / 100) : 0;
+              const net = posNet - discount;
+              const vat = pos.vatRate ? (net * pos.vatRate / 100) : 0;
+              const gross = net + vat;
+              
+              matchingNet += net;
+              matchingGross += gross;
+            }
+          });
+        }
+
+        if (hasMatchingPosition) {
+          netSum += matchingNet;
+          grossSum += matchingGross;
+          finalFilteredInvoices.push({
+            ...inv,
+            amountNet: matchingNet,
+            amountGross: matchingGross,
+            isCategoryFiltered: true
+          });
+        } else if (inv.category === categoryFilter) {
+          netSum += inv.amountNet || 0;
+          grossSum += inv.amountGross || 0;
+          finalFilteredInvoices.push(inv);
+        }
+      }
+    });
+
+    return {
+      invoices: finalFilteredInvoices,
+      totalNet: netSum,
+      totalGross: grossSum
+    };
+  }, [invoices, timeFilter, customStartDate, customEndDate, categoryFilter, statusFilter]);
 
   const syncEventsToTodos = (fetchedEvents: any[]) => {
     const mappings: Record<string, string> = {
@@ -552,6 +682,184 @@ export default function DashboardPage() {
     return (
       <div className="max-w-7xl mx-auto py-12 px-4 space-y-16 animate-in fade-in duration-1000">
         <DashboardHeader />
+
+        {/* Finanz-Dashboard Section */}
+        <div className="bg-white rounded-[40px] border border-gray-100 shadow-sm p-8 sm:p-10 space-y-8">
+           <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 border-b border-gray-50 pb-6">
+              <div className="space-y-1">
+                 <span className="text-[10px] font-black text-brand-secondary uppercase tracking-[0.2em]">Finanz-Dashboard</span>
+                 <h2 className="text-2xl font-black text-gray-900 tracking-tight">Finanzielle Übersicht</h2>
+                 <p className="text-xs text-gray-400 font-bold uppercase tracking-widest">Echtzeit-Umsatz und Filteroptionen</p>
+              </div>
+              
+              {/* Filters Panel */}
+              <div className="flex flex-wrap items-center gap-4">
+                 {/* Zeit Filter */}
+                 <div className="flex flex-col gap-1">
+                    <label className="text-[8px] font-bold text-gray-400 uppercase tracking-wider">Zeitraum</label>
+                    <select 
+                      value={timeFilter} 
+                      onChange={(e) => setTimeFilter(e.target.value as any)}
+                      className="bg-gray-50 border border-gray-100 text-xs font-bold rounded-xl px-3 py-2 outline-none focus:ring-1 focus:ring-black cursor-pointer"
+                    >
+                       <option value="ALL">Gesamter Zeitraum</option>
+                       <option value="TODAY">Heute</option>
+                       <option value="THIS_WEEK">Diese Woche</option>
+                       <option value="THIS_MONTH">Dieser Monat</option>
+                       <option value="THIS_YEAR">Dieses Jahr</option>
+                       <option value="CUSTOM">Benutzerdefiniert</option>
+                    </select>
+                 </div>
+
+                 {/* Kategorie Filter */}
+                 <div className="flex flex-col gap-1">
+                    <label className="text-[8px] font-bold text-gray-400 uppercase tracking-wider">Kategorie</label>
+                    <select 
+                      value={categoryFilter} 
+                      onChange={(e) => setCategoryFilter(e.target.value)}
+                      className="bg-gray-50 border border-gray-100 text-xs font-bold rounded-xl px-3 py-2 outline-none focus:ring-1 focus:ring-black cursor-pointer"
+                    >
+                       <option value="ALL">Alle Kategorien</option>
+                       <option value="Grafik/Druck">Grafik/Druck</option>
+                       <option value="Web Design/SEO">Web Design/SEO</option>
+                       <option value="Online Marketing">Online Marketing</option>
+                       <option value="Foto/Video">Foto/Video</option>
+                       <option value="Medya Avusturya">Medya Avusturya</option>
+                    </select>
+                 </div>
+
+                 {/* Status Filter */}
+                 <div className="flex flex-col gap-1">
+                    <label className="text-[8px] font-bold text-gray-400 uppercase tracking-wider">Status</label>
+                    <select 
+                      value={statusFilter} 
+                      onChange={(e) => setStatusFilter(e.target.value)}
+                      className="bg-gray-50 border border-gray-100 text-xs font-bold rounded-xl px-3 py-2 outline-none focus:ring-1 focus:ring-black cursor-pointer"
+                    >
+                       <option value="ALL">Alle Stati</option>
+                       <option value="OFFEN">Offen</option>
+                       <option value="BEZAHLT">Bezahlt (Alle)</option>
+                       <option value="ENTWURF">Entwurf</option>
+                       <option value="OVERDUE">Überfällig</option>
+                       <option value="BAR">Bar</option>
+                       <option value="BANK">Bank</option>
+                    </select>
+                 </div>
+              </div>
+           </div>
+
+           {/* Custom Date Range Picker */}
+           {timeFilter === "CUSTOM" && (
+             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-gray-50 p-6 rounded-3xl animate-in slide-in-from-top-2 duration-200">
+                <div className="space-y-1">
+                   <label className="text-[8px] font-bold text-gray-400 uppercase tracking-wider">Startdatum</label>
+                   <input 
+                     type="date" 
+                     className="w-full bg-white border border-gray-100 text-xs font-bold rounded-xl px-3 py-2.5 outline-none"
+                     value={customStartDate}
+                     onChange={(e) => setCustomStartDate(e.target.value)}
+                   />
+                </div>
+                <div className="space-y-1">
+                   <label className="text-[8px] font-bold text-gray-400 uppercase tracking-wider">Enddatum</label>
+                   <input 
+                     type="date" 
+                     className="w-full bg-white border border-gray-100 text-xs font-bold rounded-xl px-3 py-2.5 outline-none"
+                     value={customEndDate}
+                     onChange={(e) => setCustomEndDate(e.target.value)}
+                   />
+                </div>
+             </div>
+           )}
+
+           {/* Financial KPI Numbers */}
+           <div className="grid grid-cols-1 md:grid-cols-12 gap-8 items-center bg-gray-50/50 p-8 rounded-3xl border border-gray-100">
+              {/* Large Gross display */}
+              <div className="md:col-span-8 space-y-1">
+                 <span className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Bruttoumsatz</span>
+                 <div className="text-4xl sm:text-5xl font-black text-gray-900 tracking-tight">
+                    {formatCurrency(financialData.totalGross)}
+                 </div>
+                 <div className="text-sm font-bold text-gray-400 mt-1.5 flex items-center gap-1">
+                    <span>Netto:</span>
+                    <span className="text-gray-900 font-extrabold">{formatCurrency(financialData.totalNet)}</span>
+                 </div>
+              </div>
+
+              {/* Quick Stat boxes */}
+              <div className="md:col-span-4 grid grid-cols-2 gap-4">
+                 <div className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm text-center">
+                    <p className="text-[8px] font-black text-gray-300 uppercase tracking-wider">Rechnungen</p>
+                    <p className="text-xl font-black text-gray-900 mt-1">{financialData.invoices.length}</p>
+                 </div>
+                 <div className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm text-center">
+                    <p className="text-[8px] font-black text-gray-300 uppercase tracking-wider">Durchschnitt</p>
+                    <p className="text-xs font-black text-gray-950 mt-2 truncate">
+                       {formatCurrency(financialData.invoices.length > 0 ? (financialData.totalGross / financialData.invoices.length) : 0)}
+                    </p>
+                 </div>
+              </div>
+           </div>
+
+           {/* Filtered Invoices Mini List */}
+           {financialData.invoices.length > 0 ? (
+             <div className="space-y-4">
+                <div className="flex items-center justify-between px-2">
+                   <h4 className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Gefilterte Umsätze</h4>
+                   <span className="text-[9px] font-black text-gray-400 uppercase tracking-widest">{financialData.invoices.length} Ergebnisse</span>
+                </div>
+                <div className="overflow-x-auto border border-gray-100 rounded-2xl overflow-hidden bg-white max-h-[300px] overflow-y-auto custom-scrollbar">
+                   <table className="w-full text-left text-xs">
+                      <thead>
+                         <tr className="bg-gray-50 border-b border-gray-100">
+                            <th className="px-4 py-2.5 font-bold text-gray-400 uppercase tracking-wider">ID</th>
+                            <th className="px-4 py-2.5 font-bold text-gray-400 uppercase tracking-wider">Kunde</th>
+                            <th className="px-4 py-2.5 font-bold text-gray-400 uppercase tracking-wider">Datum</th>
+                            <th className="px-4 py-2.5 font-bold text-gray-400 uppercase tracking-wider">Kategorie</th>
+                            <th className="px-4 py-2.5 font-bold text-gray-400 uppercase tracking-wider">Status</th>
+                            <th className="px-4 py-2.5 text-right font-bold text-gray-400 uppercase tracking-wider">Brutto / Netto</th>
+                         </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-50 font-medium">
+                         {financialData.invoices.slice(0, 10).map((inv) => (
+                            <tr key={inv.id} className="hover:bg-gray-50/50 transition-colors">
+                               <td className="px-4 py-3 font-bold text-gray-900">{inv.id}</td>
+                               <td className="px-4 py-3 font-bold text-gray-700">{inv.customerName}</td>
+                               <td className="px-4 py-3 text-gray-400 font-bold">{inv.date}</td>
+                               <td className="px-4 py-3 text-gray-500 font-bold">{inv.category || "-"}</td>
+                               <td className="px-4 py-3">
+                                  <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[8px] font-bold uppercase tracking-wider ${
+                                    inv.status.startsWith("BEZAHLT") ? "bg-emerald-50 text-emerald-600" :
+                                    inv.status === "OFFEN" ? "bg-orange-50 text-orange-600" :
+                                    inv.status === "OVERDUE" ? "bg-red-50 text-red-600" : "bg-gray-50 text-gray-400"
+                                  }`}>
+                                     {inv.status}
+                                  </span>
+                               </td>
+                               <td className="px-4 py-3 text-right">
+                                  <p className="font-extrabold text-gray-900">{formatCurrency(inv.amountGross)}</p>
+                                  <p className="text-[9px] text-gray-400 font-bold">Netto: {formatCurrency(inv.amountNet)}</p>
+                               </td>
+                            </tr>
+                         ))}
+                      </tbody>
+                   </table>
+                </div>
+                {financialData.invoices.length > 10 && (
+                  <div className="text-center">
+                     <Link href="/accounting/invoices" className="text-[10px] font-black text-brand-secondary hover:underline uppercase tracking-widest">
+                        Alle {financialData.invoices.length} Rechnungen im Accounting ansehen
+                     </Link>
+                  </div>
+                )}
+             </div>
+           ) : (
+             <div className="text-center py-10 bg-gray-50 rounded-3xl border border-dashed border-gray-100">
+                <Activity className="h-8 w-8 text-gray-200 mx-auto mb-2" />
+                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Keine Umsätze im gewählten Filterzeitraum vorhanden</p>
+             </div>
+           )}
+        </div>
         
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-12">
           {/* Left Side: Active Projects */}
