@@ -255,8 +255,8 @@ export default function InvoicesDashboard() {
       </div>
 
       {viewMode === "ALL" && (
-        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm animate-in fade-in duration-200">
-          <div className="p-4 border-b border-gray-100 space-y-4">
+        <div className="animate-in fade-in duration-200 space-y-6">
+          <div className="space-y-4 py-2">
             <div className="flex flex-wrap items-center gap-1.5">
               {["ALL", "ENTWURF", "OFFEN", "BEZAHLT", "BEZAHLT_BAR", "BEZAHLT_BANK", "OVERDUE", "STORNIERT"].map(status => (
                 <button
@@ -265,7 +265,7 @@ export default function InvoicesDashboard() {
                   className={`px-2.5 py-1 rounded-lg text-[8px] font-bold uppercase tracking-widest transition-all ${
                     statusFilter === status 
                       ? "bg-brand-secondary text-white shadow-sm" 
-                      : "bg-gray-50 text-gray-400 hover:bg-gray-100"
+                      : "bg-white border border-gray-100 text-gray-500 hover:bg-gray-50 shadow-sm"
                   }`}
                 >
                   {status === "ALL" ? "Alle Rechnungen" : statusConfig[status as InvoiceStatus]?.label}
@@ -279,26 +279,26 @@ export default function InvoicesDashboard() {
                 <input 
                   type="text" 
                   placeholder="Suche nach Rechnungs-ID oder Kunde..." 
-                  className="w-full pl-9 pr-4 py-1.5 bg-gray-50 border-none rounded-lg text-xs focus:ring-1 focus:ring-black/5 outline-none transition-all font-medium text-gray-800 placeholder-gray-400"
+                  className="w-full pl-9 pr-4 py-1.5 bg-white border border-gray-100 rounded-lg text-xs focus:ring-1 focus:ring-black/5 outline-none transition-all font-medium text-gray-800 placeholder-gray-400 shadow-sm"
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                 />
               </div>
               <div className="flex items-center gap-2">
-                <button className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-50 rounded-lg text-[11px] font-bold text-gray-600 hover:bg-gray-100 transition-all border border-gray-100">
+                <button className="flex items-center gap-1.5 px-3 py-1.5 bg-white rounded-lg text-[11px] font-bold text-gray-600 hover:bg-gray-50 transition-all border border-gray-100 shadow-sm">
                   <Filter className="h-3.5 w-3.5" /> Filter
                 </button>
-                <button className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-50 rounded-lg text-[11px] font-bold text-gray-600 hover:bg-gray-100 transition-all border border-gray-100">
+                <button className="flex items-center gap-1.5 px-3 py-1.5 bg-white rounded-lg text-[11px] font-bold text-gray-600 hover:bg-gray-50 transition-all border border-gray-100 shadow-sm">
                   <Download className="h-3.5 w-3.5" /> Exportieren
                 </button>
               </div>
             </div>
           </div>
 
-          <div className="overflow-x-auto">
+          <div className="overflow-x-auto bg-white border border-gray-100 rounded-2xl shadow-sm overflow-hidden">
             <table className="w-full text-left min-w-[800px]">
               <thead>
-                <tr className="bg-gray-50/30 border-b border-gray-50">
+                <tr className="bg-gray-50/50 border-b border-gray-100">
                   <th className="px-4 py-2.5 text-[9px] font-bold text-gray-400 uppercase tracking-widest cursor-pointer hover:text-black transition-colors" onClick={() => handleSort('id')}>
                     <div className="flex items-center gap-1.5">ID <ArrowUpDown className="h-3 w-3" /></div>
                   </th>
