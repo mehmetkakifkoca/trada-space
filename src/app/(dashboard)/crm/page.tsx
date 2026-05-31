@@ -133,71 +133,70 @@ export default function CRMPage() {
         </div>
       </div>
 
-      {/* Customer Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-        {filteredCustomers.map((customer) => (
-          <div key={customer.id} className="bg-white p-8 rounded-[40px] border border-gray-100 shadow-sm relative group hover:shadow-xl hover:scale-[1.02] transition-all cursor-pointer">
-            <div className="flex items-start justify-between mb-8">
-              <div className="flex items-center gap-3">
-                <div className="h-3 w-3 rounded-full" style={{ backgroundColor: customer.color }} />
-                <h3 className="text-xl font-bold text-gray-900 group-hover:text-black transition-colors">{customer.name}</h3>
-              </div>
-              <div className="flex gap-2">
-                <button 
-                  onClick={(e) => { e.stopPropagation(); handleOpenModal(customer); }}
-                  className="h-10 w-10 bg-gray-50 rounded-xl flex items-center justify-center text-gray-400 hover:text-black hover:bg-gray-100 transition-all"
-                >
-                  <Edit2 className="h-4 w-4" />
-                </button>
-                <button 
-                  onClick={(e) => { e.stopPropagation(); handleDelete(customer.id); }}
-                  className="h-10 w-10 bg-red-50 rounded-xl flex items-center justify-center text-red-300 hover:text-red-500 hover:bg-red-100 transition-all"
-                >
-                  <Trash2 className="h-4 w-4" />
-                </button>
-              </div>
-            </div>
-
-            <div className="space-y-4">
-              <div>
-                <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest ${
-                  customer.status === 'Active' ? 'bg-emerald-50 text-emerald-600' : 'bg-orange-50 text-orange-600'
-                }`}>
-                  <div className={`h-1.5 w-1.5 rounded-full ${customer.status === 'Active' ? 'bg-emerald-500' : 'bg-orange-500'}`} />
-                  {customer.status}
-                </span>
-              </div>
-
-              <div className="pt-6 space-y-3 border-t border-gray-50">
-                <div className="flex items-center gap-3 text-sm text-gray-500">
-                  <Mail className="h-4 w-4 text-gray-300" />
-                  <span className="truncate font-medium">{customer.email}</span>
-                </div>
-                <div className="flex items-center gap-3 text-sm text-gray-500">
-                  <Phone className="h-4 w-4 text-gray-300" />
-                  <span className="font-medium">{customer.phone || "Nicht hinterlegt"}</span>
-                </div>
-              </div>
-            </div>
-
-            <button 
-              onClick={() => setSelectedCustomer(customer)}
-              className="mt-8 w-full py-4 bg-gray-50 rounded-2xl text-[10px] font-bold text-gray-400 uppercase tracking-widest group-hover:bg-black group-hover:text-white transition-all"
-            >
-               Details ansehen
-            </button>
-          </div>
-        ))}
-
-        {filteredCustomers.length === 0 && (
-          <div className="col-span-full py-20 text-center space-y-4">
-             <div className="h-20 w-20 bg-gray-50 rounded-full flex items-center justify-center mx-auto">
-                <AlertCircle className="h-10 w-10 text-gray-300" />
-             </div>
-             <p className="text-gray-500 font-medium">Keine Kunden gefunden.</p>
-          </div>
-        )}
+      {/* Customer List Card Table */}
+      <div className="bg-white border border-gray-100 rounded-2xl shadow-sm overflow-hidden animate-in fade-in duration-200">
+        <table className="w-full text-left">
+          <thead>
+            <tr className="bg-gray-50/50 border-b border-gray-100">
+              <th className="px-6 py-3 text-[10px] font-bold text-gray-400 uppercase tracking-widest">Kunde / Firma</th>
+              <th className="px-6 py-3 text-right text-[10px] font-bold text-gray-400 uppercase tracking-widest">Aktionen</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-50">
+            {filteredCustomers.map((customer) => (
+              <tr 
+                key={customer.id} 
+                className="hover:bg-gray-50/40 transition-colors group cursor-pointer"
+                onClick={() => setSelectedCustomer(customer)}
+              >
+                <td className="px-6 py-4">
+                  <div className="flex items-center gap-3">
+                    <div className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: customer.color }} />
+                    <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-3">
+                      <span className="text-sm font-bold text-gray-900 group-hover:text-brand-secondary transition-colors">
+                        {customer.company || customer.name}
+                      </span>
+                      {customer.company && customer.contactPerson && (
+                        <span className="text-[10px] text-gray-400 font-medium">({customer.contactPerson})</span>
+                      )}
+                      {customer.company && !customer.contactPerson && (
+                        <span className="text-[10px] text-gray-400 font-medium">({customer.name})</span>
+                      )}
+                    </div>
+                  </div>
+                </td>
+                <td className="px-6 py-4 text-right" onClick={(e) => e.stopPropagation()}>
+                  <div className="flex items-center justify-end gap-2">
+                    <button 
+                      onClick={() => handleOpenModal(customer)}
+                      className="p-1.5 bg-gray-50 rounded-lg text-gray-400 hover:text-black hover:bg-gray-100 transition-all border border-gray-100"
+                      title="Bearbeiten"
+                    >
+                      <Edit2 className="h-3.5 w-3.5" />
+                    </button>
+                    <button 
+                      onClick={() => handleDelete(customer.id)}
+                      className="p-1.5 bg-red-50 rounded-lg text-red-400 hover:text-red-650 hover:bg-red-100 transition-all border border-red-100/50"
+                      title="Löschen"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
+
+      {filteredCustomers.length === 0 && (
+        <div className="py-20 text-center space-y-4 bg-white border border-gray-100 rounded-2xl shadow-sm">
+           <div className="h-20 w-20 bg-gray-50 rounded-full flex items-center justify-center mx-auto">
+              <AlertCircle className="h-10 w-10 text-gray-300" />
+           </div>
+           <p className="text-gray-505 font-medium">Keine Kunden gefunden.</p>
+        </div>
+      )}
 
       {/* Add/Edit Modal */}
       {isModalOpen && (
