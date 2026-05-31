@@ -478,7 +478,42 @@ export interface FreelancerWorkLog {
   totalCost: number;
 }
 
+export interface BankTransaction {
+  id: string; // Unique transaction identifier
+  realTime?: string;
+  bookingDate: string; // Buchungsdatum
+  valueDate: string; // Valutadatum
+  purpose: string; // Zahlungsgrund / Verwendungszweck
+  bookingText: string; // Buchungstext
+  currency: string; // Währung
+  amount: number; // Betrag (positive for incoming)
+  partnerName: string; // Auftraggebername / Empfängername
+  partnerAccount?: string; // Auftraggeberkonto
+  partnerBankCode?: string; // Auftraggeber BLZ
+  recipientName?: string; // Empfängername
+  recipientAccount?: string; // Empfängerkonto
+  recipientBankCode?: string; // Empfänger BLZ
+  paymentReference?: string; // Zahlungsreferenz
+  documentNumber?: string; // Belegnummer
+  documentData?: string; // Belegdaten
+  internalNote?: string; // Interne Notiz
+
+  // Match / Reconciliation Metadata
+  matchedInvoiceId?: string;
+  matchedInvoiceIds?: string[]; // multiple matches
+  matchStatus: "Automatisch bestätigt" | "Manuelle Prüfung" | "Vorschlag" | "Mehrere mögliche Treffer" | "Nicht zugeordnet" | "Bereits importiert" | "Ignoriert";
+  matchReason?: string;
+  confidenceScore: number; // 0 to 100
+  reconciledAt?: string;
+}
+
 interface DataState {
+  bankTransactions: BankTransaction[];
+  addBankTransactions: (txs: BankTransaction[]) => void;
+  updateBankTransaction: (id: string, updates: Partial<BankTransaction>) => void;
+  deleteBankTransaction: (id: string) => void;
+  clearBankTransactions: () => void;
+
   customers: Customer[];
   invoices: Invoice[];
   expenses: Expense[];
@@ -621,6 +656,7 @@ interface DataState {
 export const useDataStore = create<DataState>()(
   persist(
     (set) => ({
+      bankTransactions: [],
       customers: [
         { id: "c1", name: "TechFlow Solutions", email: "contact@techflow.com", status: "Active", color: "#3B82F6", phone: "+49 171 1234567", socialPlan: { isActive: true, price: 2500, paymentDay: 1, weeklyPosts: 3, monthlyPosts: 12, services: ["Reels", "Stories"], reportsToGive: "Monatlich", infoToReceive: "Wöchentlich" } },
         { id: "c2", name: "Creative Mind AG", email: "billing@creativemind.ag", status: "Active", color: "#EC4899" },
@@ -1008,6 +1044,19 @@ export const useDataStore = create<DataState>()(
       }),
       deleteSavedPosition: (id) => set((state) => ({
         savedPositions: state.savedPositions.filter(p => p.id !== id)
+      })),
+
+      addBankTransactions: (txs) => set((state) => ({
+        bankTransactions: [...state.bankTransactions, ...txs]
+      })),
+      updateBankTransaction: (id, updates) => set((state) => ({
+        bankTransactions: state.bankTransactions.map(tx => tx.id === id ? { ...tx, ...updates } : tx)
+      })),
+      deleteBankTransaction: (id) => set((state) => ({
+        bankTransactions: state.bankTransactions.filter(tx => tx.id !== id)
+      })),
+      clearBankTransactions: () => set(() => ({
+        bankTransactions: []
       })),
 
     }),

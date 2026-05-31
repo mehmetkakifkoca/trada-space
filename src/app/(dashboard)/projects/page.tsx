@@ -16,6 +16,8 @@ import {
   Target,
   Briefcase,
   X,
+  Edit,
+  Trash2,
   Save,
   Building2,
   Calendar
@@ -26,7 +28,7 @@ import { toast } from "sonner";
 export default function ProjectsPage() {
   const { user } = useAuthStore();
   const { 
-    projects, addProject, customers, teamMembers,
+    projects, addProject, updateProject, deleteProject, customers, teamMembers,
     projectTasks, timeAllocations, freelancerWorkLogs
   } = useDataStore();
   
@@ -98,40 +100,137 @@ export default function ProjectsPage() {
     });
   };
 
+  // Edit mode
+  const [editingProjectId, setEditingProjectId] = useState<string | null>(null);
+
+  const handleEditProject = (project: Project) => {
+    setEditingProjectId(project.id);
+    setFormData({
+      name: project.name,
+      customerId: project.customerId,
+      category: project.category,
+      categories: project.categories || [project.category],
+      status: project.status,
+      revenue: project.revenue,
+      startDate: project.startDate,
+      deadline: project.deadline,
+      description: project.description,
+      internalCode: project.internalCode
+    });
+    setIsModalOpen(true);
+  };
+
+  const handleSaveOrUpdate = () => {
+    if (!formData.name || !formData.customerId) {
+      toast.error("Projektname und Kunde sind erforderlich.");
+      return;
+    }
+
+    const customer = customers.find(c => c.id === formData.customerId);
+
+    if (editingProjectId) {
+      // Update existing
+      updateProject(editingProjectId, {
+        ...formData,
+        customerName: customer?.name || "Unbekannter Kunde"
+      });
+      toast.success("Projekt erfolgreich aktualisiert.");
+    } else {
+      // Create new
+      const newProject: Project = {
+        ...formData as Project,
+        id: "PRJ-" + Math.floor(1000 + Math.random() * 9000),
+        customerName: customer?.name || "Unbekannter Kunde",
+        createdAt: Date.now()
+      };
+      addProject(newProject);
+      toast.success("Projekt erfolgreich erstellt.");
+    }
+
+    setIsModalOpen(false);
+    setEditingProjectId(null);
+    setFormData({
+      name: "",
+      customerId: "",
+      category: "Design",
+      categories: ["Design"],
+      status: "Active",
+      revenue: 0,
+      startDate: new Date().toISOString().split('T')[0],
+      deadline: "",
+      description: "",
+      internalCode: ""
+    });
+  };
+
+  const handleDeleteProject = (id: string) => {
+    if (confirm("Dieses Projekt wirklich löschen?")) {
+      deleteProject(id);
+      toast.success("Projekt gelöscht.");
+    }
+  };
+
+  const formatCurrency = (val: number) => {
+    return new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR' }).format(val);
+  };
+
+  const statusLabel: Record<ProjectStatus, string> = {
+    Draft: "Entwurf",
+    Active: "Aktiv",
+    "Waiting for client": "Wartend",
+    Finished: "Abgeschlossen",
+    Cancelled: "Abgebrochen"
+  };
+
   return (
-    <div className="max-w-7xl mx-auto pb-20 space-y-10 animate-in fade-in duration-700">
+    <div className="max-w-7xl mx-auto pb-20 space-y-6 animate-in fade-in duration-700">
       {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-4xl font-black text-gray-900 tracking-tight">Projekte</h1>
-          <p className="text-gray-400 font-medium mt-1">Verwalten Sie Ihre Kundenprojekte und Rentabilität.</p>
+          <h1 className="text-2xl font-bold text-gray-900 tracking-tight">Projekte</h1>
+          <p className="text-xs text-gray-500 mt-1 font-medium">Verwalten Sie Ihre Kundenprojekte und Rentabilität.</p>
         </div>
         {isCEO && (
           <button 
-            onClick={() => setIsModalOpen(true)}
-            className="flex items-center gap-3 bg-black text-white px-8 py-4 rounded-2xl font-black uppercase text-[10px] tracking-[0.2em] hover:scale-105 transition-all shadow-xl"
+            onClick={() => {
+              setEditingProjectId(null);
+              setFormData({
+                name: "",
+                customerId: "",
+                category: "Design",
+                categories: ["Design"],
+                status: "Active",
+                revenue: 0,
+                startDate: new Date().toISOString().split('T')[0],
+                deadline: "",
+                description: "",
+                internalCode: ""
+              });
+              setIsModalOpen(true);
+            }}
+            className="flex items-center gap-2 bg-black text-white px-5 py-2.5 rounded-xl font-bold text-xs hover:scale-[1.02] transition-all shadow-md"
           >
-            <Plus className="h-5 w-5" /> Neues Projekt
+            <Plus className="h-4 w-4" /> Neues Projekt
           </button>
         )}
       </div>
 
       {/* Filters & Search */}
-      <div className="flex flex-col md:flex-row gap-4">
-        <div className="flex-1 relative group">
-          <Search className="absolute left-6 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-300 group-focus-within:text-black transition-colors" />
+      <div className="flex flex-col sm:flex-row gap-3">
+        <div className="flex-1 relative">
+          <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
           <input 
             type="text"
             placeholder="Projekte suchen..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-16 pr-8 py-5 bg-white border border-gray-100 rounded-[24px] text-sm font-bold outline-none focus:ring-4 focus:ring-black/5 shadow-sm transition-all"
+            className="w-full pl-11 pr-4 py-2.5 bg-white border border-gray-100 rounded-xl text-xs font-bold outline-none focus:ring-2 focus:ring-black/10 shadow-sm"
           />
         </div>
         <select 
           value={statusFilter}
           onChange={(e) => setStatusFilter(e.target.value as any)}
-          className="px-8 py-5 bg-white border border-gray-100 rounded-[24px] text-sm font-bold outline-none focus:ring-4 focus:ring-black/5 shadow-sm transition-all appearance-none cursor-pointer"
+          className="px-4 py-2.5 bg-white border border-gray-100 rounded-xl text-xs font-bold outline-none focus:ring-2 focus:ring-black/10 shadow-sm appearance-none cursor-pointer"
         >
           <option value="All">Alle Status</option>
           <option value="Draft">Entwurf</option>
@@ -142,111 +241,138 @@ export default function ProjectsPage() {
         </select>
       </div>
 
-      {/* Project Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-        {displayProjects.map((project) => {
-          const stats = calculateProjectQuickStats(project, projectTasks, timeAllocations, teamMembers, freelancerWorkLogs);
-          return (
-            <Link 
-              key={project.id}
-              href={`/projects/${project.id}`}
-              className="group bg-white rounded-[40px] border border-gray-100 shadow-sm hover:shadow-2xl hover:scale-[1.02] transition-all p-8 flex flex-col gap-6"
-            >
-              <div className="flex justify-between items-start">
-                <div className="space-y-1">
-                   <p className="text-[10px] font-black text-brand-secondary uppercase tracking-[0.2em]">{project.categories?.join(", ") || project.category}</p>
-                   <h3 className="text-xl font-black text-gray-900 leading-tight group-hover:text-brand-secondary transition-colors">{project.name}</h3>
-                   <p className="text-xs font-bold text-gray-400">{project.customerName}</p>
-                </div>
-                <StatusBadge status={project.status} />
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div className="bg-gray-50 rounded-2xl p-4 space-y-1">
-                  <p className="text-[8px] font-black text-gray-400 uppercase tracking-widest">Umsatz</p>
-                  <p className="text-sm font-black text-gray-900">€{project.revenue.toLocaleString()}</p>
-                </div>
-                <div className="bg-gray-50 rounded-2xl p-4 space-y-1">
-                  <p className="text-[8px] font-black text-gray-400 uppercase tracking-widest">Profit</p>
-                  <p className={`text-sm font-black ${stats.profit >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
-                    €{stats.profit.toLocaleString()}
-                  </p>
-                </div>
-              </div>
-
-              <div className="space-y-4">
-                 <div className="flex justify-between items-end">
-                    <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Zeit / Stunden</p>
-                    <span className="text-xs font-black text-gray-900">{stats.totalHours.toFixed(1)}h</span>
-                 </div>
-                 <div className="h-2 w-full bg-gray-100 rounded-full overflow-hidden">
-                    <div 
-                      className={`h-full bg-black transition-all duration-1000`}
-                      style={{ width: `${Math.min(100, (stats.totalHours / 100) * 100)}%` }}
-                    />
-                 </div>
-              </div>
-
-              <div className="flex items-center justify-between pt-4 border-t border-gray-100">
-                <div className="flex -space-x-2">
-                   {stats.involvedMembers.slice(0, 3).map(m => (
-                     <div key={m.id} className="h-8 w-8 rounded-full border-2 border-white bg-gray-100 overflow-hidden shadow-sm">
-                       {m.avatarUrl ? <img src={m.avatarUrl} className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-[10px] font-bold text-gray-400">{m.username.charAt(0).toUpperCase()}</div>}
-                     </div>
-                   ))}
-                   {stats.involvedMembers.length > 3 && (
-                     <div className="h-8 w-8 rounded-full border-2 border-white bg-gray-900 flex items-center justify-center text-[10px] font-black text-white shadow-sm">
-                       +{stats.involvedMembers.length - 3}
-                     </div>
-                   )}
-                </div>
-                <div className="flex items-center gap-2 text-gray-300 group-hover:text-black transition-colors">
-                  <span className="text-[10px] font-black uppercase tracking-widest">Details</span>
-                  <ChevronRight className="h-4 w-4" />
-                </div>
-              </div>
-            </Link>
-          );
-        })}
+      {/* Project List Table */}
+      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full text-left min-w-[800px]">
+            <thead>
+              <tr className="border-b border-gray-100 bg-gray-50/50">
+                <th className="px-5 py-3 text-[9px] font-black text-gray-400 uppercase tracking-widest">Projekt</th>
+                <th className="px-5 py-3 text-[9px] font-black text-gray-400 uppercase tracking-widest">Kunde</th>
+                <th className="px-5 py-3 text-[9px] font-black text-gray-400 uppercase tracking-widest">Kategorie</th>
+                <th className="px-5 py-3 text-[9px] font-black text-gray-400 uppercase tracking-widest">Status</th>
+                <th className="px-5 py-3 text-[9px] font-black text-gray-400 uppercase tracking-widest text-right">Umsatz</th>
+                <th className="px-5 py-3 text-[9px] font-black text-gray-400 uppercase tracking-widest text-right">Profit</th>
+                <th className="px-5 py-3 text-[9px] font-black text-gray-400 uppercase tracking-widest text-right">Stunden</th>
+                <th className="px-5 py-3 text-[9px] font-black text-gray-400 uppercase tracking-widest text-right">Aktion</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-50">
+              {displayProjects.length === 0 ? (
+                <tr>
+                  <td colSpan={8} className="px-5 py-16 text-center text-gray-400 font-medium text-sm">
+                    Keine Projekte gefunden.
+                  </td>
+                </tr>
+              ) : (
+                displayProjects.map((project) => {
+                  const stats = calculateProjectQuickStats(project, projectTasks, timeAllocations, teamMembers, freelancerWorkLogs);
+                  return (
+                    <tr key={project.id} className="hover:bg-gray-50/50 transition-colors group">
+                      <td className="px-5 py-3.5">
+                        <p className="text-xs font-bold text-gray-900 truncate max-w-[200px]">{project.name}</p>
+                        {project.internalCode && (
+                          <p className="text-[9px] text-gray-400 font-medium mt-0.5">{project.internalCode}</p>
+                        )}
+                      </td>
+                      <td className="px-5 py-3.5">
+                        <p className="text-xs font-medium text-gray-600 truncate max-w-[150px]">{project.customerName}</p>
+                      </td>
+                      <td className="px-5 py-3.5">
+                        <span className="text-[9px] font-bold text-brand-secondary uppercase tracking-wider">
+                          {project.categories?.join(", ") || project.category}
+                        </span>
+                      </td>
+                      <td className="px-5 py-3.5">
+                        <StatusBadge status={project.status} />
+                      </td>
+                      <td className="px-5 py-3.5 text-right">
+                        <span className="text-xs font-bold text-gray-900">{formatCurrency(project.revenue)}</span>
+                      </td>
+                      <td className="px-5 py-3.5 text-right">
+                        <span className={`text-xs font-bold ${stats.profit >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
+                          {formatCurrency(stats.profit)}
+                        </span>
+                      </td>
+                      <td className="px-5 py-3.5 text-right">
+                        <span className="text-xs font-bold text-gray-500">{stats.totalHours.toFixed(1)}h</span>
+                      </td>
+                      <td className="px-5 py-3.5 text-right">
+                        <div className="flex items-center justify-end gap-2">
+                          <Link
+                            href={`/projects/${project.id}`}
+                            className="p-1.5 bg-gray-50 rounded-lg text-gray-400 hover:text-black hover:bg-gray-100 transition-all border border-gray-100"
+                            title="Details"
+                          >
+                            <ChevronRight className="h-3.5 w-3.5" />
+                          </Link>
+                          {isCEO && (
+                            <>
+                              <button
+                                onClick={() => handleEditProject(project)}
+                                className="p-1.5 bg-gray-50 rounded-lg text-gray-400 hover:text-black hover:bg-gray-100 transition-all border border-gray-100"
+                                title="Bearbeiten"
+                              >
+                                <Edit className="h-3.5 w-3.5" />
+                              </button>
+                              <button
+                                onClick={() => handleDeleteProject(project.id)}
+                                className="p-1.5 bg-red-50 rounded-lg text-red-400 hover:text-red-650 hover:bg-red-100 transition-all border border-red-100/50"
+                                title="Löschen"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
 
-      {/* Project Creation Modal */}
+      {/* Project Creation / Edit Modal */}
       {isModalOpen && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-md z-[100] flex items-center justify-center p-4 overflow-y-auto">
-          <div className="bg-white w-full max-w-2xl rounded-[48px] shadow-2xl p-10 space-y-10 my-10 relative animate-in zoom-in-95 duration-300">
-            <button onClick={() => setIsModalOpen(false)} className="absolute top-8 right-8 h-12 w-12 bg-gray-50 rounded-full flex items-center justify-center text-gray-400 hover:text-black transition-all">
-              <X className="h-6 w-6" />
-            </button>
-
-            <div className="text-center space-y-2">
-              <h2 className="text-3xl font-black text-gray-900">Neues Projekt</h2>
-              <p className="text-sm text-gray-400 font-medium">Erstellen Sie ein neues Kundenprojekt und definieren Sie das Budget.</p>
+          <div className="bg-white w-full max-w-2xl rounded-[32px] shadow-2xl overflow-y-auto max-h-[90vh] my-10 relative animate-in zoom-in-95 duration-200">
+            <div className="p-6 sm:p-8 border-b border-gray-50 flex items-center justify-between">
+              <h2 className="text-xl font-bold text-gray-900">{editingProjectId ? "Projekt bearbeiten" : "Neues Projekt"}</h2>
+              <button onClick={() => { setIsModalOpen(false); setEditingProjectId(null); }} className="h-10 w-10 bg-gray-50 rounded-xl flex items-center justify-center text-gray-400 hover:text-black transition-colors">
+                <X className="h-5 w-5" />
+              </button>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div className="space-y-2">
-                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Projektname</label>
-                <input 
-                  className="w-full px-6 py-4 bg-gray-50 rounded-2xl text-sm font-bold outline-none focus:ring-4 focus:ring-black/5"
-                  value={formData.name}
-                  onChange={(e) => setFormData({...formData, name: e.target.value})}
-                  placeholder="Z.B. Website Redesign"
-                />
+            <div className="p-6 sm:p-8 space-y-5">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <label className="text-[8px] font-bold text-gray-400 uppercase tracking-widest">Projektname</label>
+                  <input 
+                    className="w-full px-3 py-2 bg-gray-50 border border-gray-100 rounded-xl text-xs font-bold outline-none"
+                    value={formData.name}
+                    onChange={(e) => setFormData({...formData, name: e.target.value})}
+                    placeholder="Z.B. Website Redesign"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-[8px] font-bold text-gray-400 uppercase tracking-widest">Kunde</label>
+                  <select 
+                    className="w-full px-3 py-2 bg-gray-50 border border-gray-100 rounded-xl text-xs font-bold outline-none appearance-none cursor-pointer"
+                    value={formData.customerId}
+                    onChange={(e) => setFormData({...formData, customerId: e.target.value})}
+                  >
+                    <option value="">Kunde wählen...</option>
+                    {customers.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                  </select>
+                </div>
               </div>
-              <div className="space-y-2">
-                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Kunde</label>
-                <select 
-                  className="w-full px-6 py-4 bg-gray-50 rounded-2xl text-sm font-bold outline-none focus:ring-4 focus:ring-black/5 appearance-none"
-                  value={formData.customerId}
-                  onChange={(e) => setFormData({...formData, customerId: e.target.value})}
-                >
-                  <option value="">Kunde wählen...</option>
-                  {customers.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                </select>
-              </div>
-              <div className="space-y-2 md:col-span-2">
-                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Kategorien (Mehrfachauswahl)</label>
-                <div className="flex flex-wrap gap-2">
+
+              <div className="space-y-1.5">
+                <label className="text-[8px] font-bold text-gray-400 uppercase tracking-widest">Kategorien</label>
+                <div className="flex flex-wrap gap-1.5">
                   {SYSTEM_CATEGORIES.map(cat => (
                     <button
                       key={cat}
@@ -255,7 +381,7 @@ export default function ProjectsPage() {
                         const next = current.includes(cat as any) ? current.filter(c => c !== cat) : [...current, cat as any];
                         setFormData({...formData, categories: next, category: (next[0] || "Design") as any});
                       }}
-                      className={`px-4 py-2 rounded-xl text-xs font-bold border transition-all ${
+                      className={`px-3 py-1.5 rounded-lg text-[10px] font-bold border transition-all ${
                         formData.categories?.includes(cat as any) ? "bg-black text-white border-black" : "bg-gray-50 text-gray-400 border-gray-100 hover:bg-gray-100"
                       }`}
                     >
@@ -264,51 +390,72 @@ export default function ProjectsPage() {
                   ))}
                 </div>
               </div>
-              <div className="space-y-2">
-                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Budget / Umsatz (€)</label>
-                <input 
-                  type="number"
-                  className="w-full px-6 py-4 bg-gray-50 rounded-2xl text-sm font-bold outline-none focus:ring-4 focus:ring-black/5"
-                  value={formData.revenue}
-                  onChange={(e) => setFormData({...formData, revenue: Number(e.target.value)})}
-                />
-              </div>
-              <div className="space-y-2">
-                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Startdatum</label>
-                <input 
-                  type="date"
-                  className="w-full px-6 py-4 bg-gray-50 rounded-2xl text-sm font-bold outline-none focus:ring-4 focus:ring-black/5"
-                  value={formData.startDate}
-                  onChange={(e) => setFormData({...formData, startDate: e.target.value})}
-                />
-              </div>
-              <div className="space-y-2">
-                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Deadline</label>
-                <input 
-                  type="date"
-                  className="w-full px-6 py-4 bg-gray-50 rounded-2xl text-sm font-bold outline-none focus:ring-4 focus:ring-black/5"
-                  value={formData.deadline}
-                  onChange={(e) => setFormData({...formData, deadline: e.target.value})}
-                />
-              </div>
-            </div>
 
-            <div className="space-y-2">
-              <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Projektbeschreibung</label>
-              <textarea 
-                className="w-full px-6 py-4 bg-gray-50 rounded-2xl text-sm font-bold outline-none focus:ring-4 focus:ring-black/5 min-h-[120px]"
-                value={formData.description}
-                onChange={(e) => setFormData({...formData, description: e.target.value})}
-                placeholder="Details zum Projekt..."
-              />
-            </div>
+              {editingProjectId && (
+                <div className="space-y-1.5">
+                  <label className="text-[8px] font-bold text-gray-400 uppercase tracking-widest">Status</label>
+                  <select 
+                    className="w-full px-3 py-2 bg-gray-50 border border-gray-100 rounded-xl text-xs font-bold outline-none appearance-none cursor-pointer"
+                    value={formData.status}
+                    onChange={(e) => setFormData({...formData, status: e.target.value as ProjectStatus})}
+                  >
+                    <option value="Draft">Entwurf</option>
+                    <option value="Active">Aktiv</option>
+                    <option value="Waiting for client">Warten auf Kunden</option>
+                    <option value="Finished">Abgeschlossen</option>
+                    <option value="Cancelled">Abgebrochen</option>
+                  </select>
+                </div>
+              )}
 
-            <button 
-              onClick={handleSaveProject}
-              className="w-full py-5 bg-black text-white rounded-[24px] font-black uppercase text-xs tracking-[0.3em] hover:scale-[1.02] active:scale-[0.98] transition-all shadow-2xl"
-            >
-              Projekt Erstellen
-            </button>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div className="space-y-1.5">
+                  <label className="text-[8px] font-bold text-gray-400 uppercase tracking-widest">Budget / Umsatz (€)</label>
+                  <input 
+                    type="number"
+                    className="w-full px-3 py-2 bg-gray-50 border border-gray-100 rounded-xl text-xs font-bold outline-none"
+                    value={formData.revenue}
+                    onChange={(e) => setFormData({...formData, revenue: Number(e.target.value)})}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-[8px] font-bold text-gray-400 uppercase tracking-widest">Startdatum</label>
+                  <input 
+                    type="date"
+                    className="w-full px-3 py-2 bg-gray-50 border border-gray-100 rounded-xl text-xs font-bold outline-none"
+                    value={formData.startDate}
+                    onChange={(e) => setFormData({...formData, startDate: e.target.value})}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-[8px] font-bold text-gray-400 uppercase tracking-widest">Deadline</label>
+                  <input 
+                    type="date"
+                    className="w-full px-3 py-2 bg-gray-50 border border-gray-100 rounded-xl text-xs font-bold outline-none"
+                    value={formData.deadline}
+                    onChange={(e) => setFormData({...formData, deadline: e.target.value})}
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-[8px] font-bold text-gray-400 uppercase tracking-widest">Projektbeschreibung</label>
+                <textarea 
+                  className="w-full px-3 py-2 bg-gray-50 border border-gray-100 rounded-xl text-xs font-bold outline-none resize-none h-20"
+                  value={formData.description}
+                  onChange={(e) => setFormData({...formData, description: e.target.value})}
+                  placeholder="Details zum Projekt..."
+                />
+              </div>
+
+              <button 
+                onClick={handleSaveOrUpdate}
+                className="w-full py-3.5 bg-black text-white rounded-xl font-bold text-xs uppercase tracking-widest hover:scale-[1.02] active:scale-95 transition-all shadow-lg flex items-center justify-center gap-2"
+              >
+                <Save className="h-4 w-4" />
+                {editingProjectId ? "Projekt Aktualisieren" : "Projekt Erstellen"}
+              </button>
+            </div>
           </div>
         </div>
       )}

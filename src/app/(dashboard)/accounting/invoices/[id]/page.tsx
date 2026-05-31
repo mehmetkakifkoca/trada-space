@@ -364,7 +364,8 @@ export default function InvoiceEditorPage() {
     if (isNew) {
       addInvoice(draftInvoice);
     } else {
-      updateInvoice(draftInvoice.id, draftInvoice);
+      // Use original URL param `id` to find record, not the potentially-changed draftInvoice.id
+      updateInvoice(id, draftInvoice);
     }
     
     setIsDirty(false); // Reset dirty state
@@ -413,7 +414,10 @@ export default function InvoiceEditorPage() {
     if (isNew) {
       addInvoice({ ...finalInvoice, status: "ENTWURF" });
     } else {
-      updateInvoice(invoice.id!, finalInvoice);
+      // Use the original URL param `id` to find the record in the store,
+      // not `invoice.id` which may have been changed by the user.
+      // The spread in updateInvoice will overwrite the old id with the new one.
+      updateInvoice(id, finalInvoice);
     }
     
     setIsDirty(false); // Clear dirty state

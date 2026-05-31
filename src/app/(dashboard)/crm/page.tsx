@@ -14,7 +14,7 @@ import {
   ChevronRight,
   X,
   Trash2,
-  Edit2,
+  Edit,
   Save,
   CheckCircle2,
   AlertCircle
@@ -172,7 +172,7 @@ export default function CRMPage() {
                       className="p-1.5 bg-gray-50 rounded-lg text-gray-400 hover:text-black hover:bg-gray-100 transition-all border border-gray-100"
                       title="Bearbeiten"
                     >
-                      <Edit2 className="h-3.5 w-3.5" />
+                      <Edit className="h-3.5 w-3.5" />
                     </button>
                     <button 
                       onClick={() => handleDelete(customer.id)}
@@ -477,7 +477,7 @@ export default function CRMPage() {
                  onClick={() => { setEditingCustomer(selectedCustomer); setFormData(selectedCustomer); setIsModalOpen(true); setSelectedCustomer(null); }}
                  className="flex-1 py-4 bg-white border border-gray-200 rounded-2xl text-xs font-bold text-gray-600 hover:bg-gray-50 transition-all flex items-center justify-center gap-2"
                >
-                 <Edit2 className="h-4 w-4" /> Bearbeiten
+                 <Edit className="h-4 w-4" /> Bearbeiten
                </button>
                <button 
                  onClick={() => setSelectedCustomer(null)}

@@ -10,7 +10,7 @@ import {
   Euro, 
   Plus, 
   Trash2, 
-  Edit2, 
+  Edit, 
   ChevronLeft,
   ChevronRight,
   Layers
@@ -424,8 +424,8 @@ export default function FreelancersPage() {
                               {format(parseISO(log.date), "dd.MM.yyyy")}
                             </td>
                             <td className="p-4 font-bold text-gray-600 text-sm">{proj?.name || "Unbekannt"}</td>
-                            <td className="p-4 text-sm text-gray-500">
-                              <p className="font-medium">{log.description || "-"}</p>
+                            <td className="p-4 text-sm text-gray-500 max-w-[300px]">
+                              <p className="font-medium line-clamp-2" title={log.description || "-"}>{log.description || "-"}</p>
                               {log.type === "HOURLY" && (
                                 <p className="text-[10px] uppercase font-bold text-gray-400 mt-1">
                                   {log.startTime} - {log.endTime} ({log.durationHours?.toFixed(1)}h)
@@ -457,7 +457,7 @@ export default function FreelancersPage() {
                                   }}
                                   className="h-8 w-8 inline-flex items-center justify-center rounded-lg text-gray-400 hover:bg-gray-100 hover:text-black transition-colors"
                                 >
-                                  <Edit2 className="h-4 w-4" />
+                                  <Edit className="h-4 w-4" />
                                 </button>
                                 <button 
                                   onClick={() => deleteFreelancerWorkLog(log.id)}
@@ -497,7 +497,7 @@ export default function FreelancersPage() {
                         </div>
 
                         <div className="space-y-1">
-                          <p className="text-xs font-bold text-gray-700 leading-relaxed">
+                          <p className="text-xs font-bold text-gray-700 leading-relaxed line-clamp-2" title={log.description || "Keine Beschreibung"}>
                             {log.description || "Keine Beschreibung"}
                           </p>
                           {log.type === "HOURLY" && (
@@ -534,7 +534,7 @@ export default function FreelancersPage() {
                                 }}
                                 className="h-8 w-8 inline-flex items-center justify-center rounded-xl bg-gray-50 text-gray-500 hover:bg-gray-100 hover:text-black transition-colors"
                               >
-                                <Edit2 className="h-3.5 w-3.5" />
+                                <Edit className="h-3.5 w-3.5" />
                               </button>
                               <button 
                                 onClick={() => deleteFreelancerWorkLog(log.id)}
@@ -583,7 +583,7 @@ export default function FreelancersPage() {
                         }}
                         className="h-8 w-8 bg-gray-50 rounded-full flex items-center justify-center text-gray-400 hover:bg-gray-200 hover:text-black transition-colors"
                       >
-                        <Edit2 className="h-4 w-4" />
+                        <Edit className="h-4 w-4" />
                       </button>
                       <button 
                         onClick={() => deleteFreelancerTag(tag.id)}

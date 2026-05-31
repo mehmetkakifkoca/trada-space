@@ -6,7 +6,8 @@ import {
   useDataStore, 
   Invoice, 
   InvoiceStatus, 
-  RecurringInvoice 
+  RecurringInvoice,
+  BankTransaction
 } from "@/store/data-store";
 import { 
   Plus, 
@@ -594,25 +595,87 @@ interface BankTx {
   matchedInvoice?: Invoice;
   confidence?: "EXACT" | "HIGH" | "MEDIUM" | "LOW" | "NONE";
   confidenceLabel?: string;
-  status: "PENDING" | "RECONCILED" | "IGNORED";
+  status: "PENDING" | "RECONCILED";
 }
 
 function BankReconciliationView({ invoices, updateInvoice }: { invoices: Invoice[]; updateInvoice: any }) {
-  const [transactions, setTransactions] = useState<BankTx[]>([]);
+  const { 
+    bankTransactions = [], 
+    addBankTransactions, 
+    updateBankTransaction, 
+    deleteBankTransaction, 
+    clearBankTransactions 
+  } = useDataStore();
+
+  const [activeSubView, setActiveSubView] = useState<"IMPORT" | "MANUAL" | "AUTO" | "UNASSIGNED" | "HISTORY">("IMPORT");
   const [fileName, setFileName] = useState("");
   const [dragActive, setDragActive] = useState(false);
+  const [recentImportSummary, setRecentImportSummary] = useState<any | null>(null);
+  
+  // Search & Filter for History
+  const [searchHistoryTerm, setSearchHistoryTerm] = useState("");
+  const [filterHistoryStatus, setFilterHistoryStatus] = useState<string>("ALL");
 
-  // Unpaid invoices
-  const unpaidInvoices = useMemo(() => {
+  // Dropdown for manually assigning a different invoice
+  const [assigningTxId, setAssigningTxId] = useState<string | null>(null);
+
+  // Unpaid invoices for manual mapping
+  const openInvoices = useMemo(() => {
     return invoices.filter(inv => inv.status === "OFFEN" || inv.status === "OVERDUE");
   }, [invoices]);
 
-  const parseAmount = (valStr: string): number => {
+  const parseAmountVal = (valStr: string): number => {
     if (!valStr) return 0;
-    let clean = valStr.replace(/\./g, '');
-    clean = clean.replace(/,/g, '.');
+    let clean = valStr.trim();
+    if (clean.includes(',') && clean.includes('.')) {
+      clean = clean.replace(/\./g, '').replace(/,/g, '.');
+    } else if (clean.includes(',')) {
+      clean = clean.replace(/,/g, '.');
+    }
     clean = clean.replace(/[^0-9.-]/g, '');
     return parseFloat(clean) || 0;
+  };
+
+  const formatCurrency = (val: number) => {
+    return new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR' }).format(val);
+  };
+
+  // String resemblance check
+  const JaroWinklerDistance = (s1: string, s2: string): number => {
+    const m1 = s1.toLowerCase().replace(/[^a-z0-9]/g, '');
+    const m2 = s2.toLowerCase().replace(/[^a-z0-9]/g, '');
+    if (m1 === m2) return 1.0;
+    if (m1.includes(m2) || m2.includes(m1)) return 0.85;
+    return 0.0;
+  };
+
+  const findInvoiceByReference = (tx: Partial<BankTransaction>, openInvoices: Invoice[]) => {
+    const searchTexts = [
+      tx.paymentReference || '',
+      tx.purpose || '',
+      tx.bookingText || '',
+      tx.documentData || ''
+    ].map(t => t.toUpperCase());
+
+    for (const inv of openInvoices) {
+      const invIdUpper = inv.id.toUpperCase();
+      const cleanInvId = inv.id.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+      const rawNum = inv.id.replace(/[^0-9]/g, '');
+
+      for (const text of searchTexts) {
+        if (!text) continue;
+        const cleanText = text.replace(/[^a-zA-Z0-9]/g, '');
+        
+        if (
+          text.includes(invIdUpper) ||
+          (cleanInvId && cleanText.includes(cleanInvId)) ||
+          (rawNum && rawNum.length >= 3 && cleanText.includes(rawNum))
+        ) {
+          return inv;
+        }
+      }
+    }
+    return null;
   };
 
   const processCSVContent = (text: string) => {
@@ -648,91 +711,181 @@ function BankReconciliationView({ invoices, updateInvoice }: { invoices: Invoice
 
     const headers = parseLine(lines[0]).map(h => h.toLowerCase());
     
-    // Key mappings
-    const dateKws = ['datum', 'tag', 'date', 'valuta', 'buchungstext'];
-    const nameKws = ['name', 'empfänger', 'auftraggeber', 'begünstigter', 'zahler', 'partner', 'payee'];
-    const purposeKws = ['verwendungszweck', 'betreff', 'zweck', 'beschreibung', 'details', 'reference', 'info', 'text'];
-    const amountKws = ['betrag', 'umsatz', 'wert', 'amount', 'summe'];
-
     const getColumnIndex = (kws: string[]) => {
       return headers.findIndex(h => kws.some(kw => h.includes(kw)));
     };
 
-    const dateIdx = getColumnIndex(dateKws);
-    const nameIdx = getColumnIndex(nameKws);
-    const purposeIdx = getColumnIndex(purposeKws);
-    const amountIdx = getColumnIndex(amountKws);
+    const dateIdx = getColumnIndex(['buchungsdatum', 'buchung-datum', 'date', 'tag']);
+    const valutaIdx = getColumnIndex(['valutadatum', 'valuta-datum', 'valuta']);
+    const textIdx = getColumnIndex(['buchungstext', 'buchungs-text']);
+    const currencyIdx = getColumnIndex(['währung', 'currency']);
+    const amountIdx = getColumnIndex(['betrag', 'amount', 'umsatz']);
+    const docDataIdx = getColumnIndex(['belegdaten', 'beleg-daten']);
+    const docNumIdx = getColumnIndex(['belegnummer', 'beleg-nummer']);
+    const partnerNameIdx = getColumnIndex(['auftraggebername', 'auftraggeber-name', 'name', 'sender']);
+    const partnerAccIdx = getColumnIndex(['auftraggeberkonto', 'auftraggeber-konto', 'konto']);
+    const partnerBlzIdx = getColumnIndex(['auftraggeber blz', 'auftraggeber-blz', 'blz']);
+    const recNameIdx = getColumnIndex(['empfängername', 'empfänger-name']);
+    const recAccIdx = getColumnIndex(['empfängerkonto', 'empfänger-konto']);
+    const recBlzIdx = getColumnIndex(['empfänger blz', 'empfänger-blz']);
+    const purposeIdx = getColumnIndex(['zahlungsgrund', 'zahlungs-grund', 'verwendungszweck']);
+    const refIdx = getColumnIndex(['zahlungsreferenz', 'zahlungs-referenz', 'referenz']);
+    const noteIdx = getColumnIndex(['interne notiz', 'notiz']);
+    const realTimeIdx = getColumnIndex(['echtzeit', 'realtime']);
 
     if (amountIdx === -1) {
       toast.error("Betrag-Spalte konnte im CSV-Kontoauszug nicht automatisch ermittelt werden.");
       return;
     }
 
-    const parsedTxs: BankTx[] = [];
+    const newTxs: BankTransaction[] = [];
+    const openInvs = invoices.filter(inv => inv.status === "OFFEN" || inv.status === "OVERDUE");
+
+    let countImported = 0;
+    let countAlreadyExists = 0;
+    let countIncome = 0;
+    let countAutoConfirmed = 0;
+    let countManualReview = 0;
+    let countUnassigned = 0;
+    let countIgnoredExpenses = 0;
 
     for (let i = 1; i < lines.length; i++) {
       const cells = parseLine(lines[i]);
       if (cells.length === 0) continue;
 
-      const dateVal = dateIdx !== -1 ? cells[dateIdx] || '' : new Date().toISOString().split('T')[0];
-      const partnerVal = nameIdx !== -1 ? cells[nameIdx] || '' : 'Unbekannter Partner';
-      const purposeVal = purposeIdx !== -1 ? cells[purposeIdx] || '' : '';
-      const amountVal = parseAmount(cells[amountIdx] || '0');
+      const amountVal = parseAmountVal(cells[amountIdx] || '0');
+      
+      const tx: Partial<BankTransaction> = {
+        bookingDate: dateIdx !== -1 ? cells[dateIdx] || '' : new Date().toISOString().split('T')[0],
+        valueDate: valutaIdx !== -1 ? cells[valutaIdx] || '' : new Date().toISOString().split('T')[0],
+        bookingText: textIdx !== -1 ? cells[textIdx] || '' : '',
+        currency: currencyIdx !== -1 ? cells[currencyIdx] || 'EUR' : 'EUR',
+        amount: amountVal,
+        partnerName: partnerNameIdx !== -1 ? cells[partnerNameIdx] || 'Unbekannter Partner' : 'Unbekannter Partner',
+        partnerAccount: partnerAccIdx !== -1 ? cells[partnerAccIdx] || '' : '',
+        partnerBankCode: partnerBlzIdx !== -1 ? cells[partnerBlzIdx] || '' : '',
+        recipientName: recNameIdx !== -1 ? cells[recNameIdx] || '' : '',
+        recipientAccount: recAccIdx !== -1 ? cells[recAccIdx] || '' : '',
+        recipientBankCode: recBlzIdx !== -1 ? cells[recBlzIdx] || '' : '',
+        purpose: purposeIdx !== -1 ? cells[purposeIdx] || '' : '',
+        paymentReference: refIdx !== -1 ? cells[refIdx] || '' : '',
+        documentNumber: docNumIdx !== -1 ? cells[docNumIdx] || '' : '',
+        documentData: docDataIdx !== -1 ? cells[docDataIdx] || '' : '',
+        internalNote: noteIdx !== -1 ? cells[noteIdx] || '' : '',
+        realTime: realTimeIdx !== -1 ? cells[realTimeIdx] || '' : ''
+      };
 
-      // Reconcile incoming positive bank transfers only (meaning income)
-      if (amountVal <= 0) continue;
+      // Prevent Duplicates check
+      const compositeHash = `${tx.bookingDate}_${tx.valueDate}_${tx.amount}_${tx.partnerName}_${tx.purpose}`.replace(/\s+/g, '');
+      const isDuplicate = bankTransactions.some(existing => {
+        const existingHash = `${existing.bookingDate}_${existing.valueDate}_${existing.amount}_${existing.partnerName}_${existing.purpose}`.replace(/\s+/g, '');
+        return existingHash === compositeHash;
+      });
 
-      // Smart matching against unpaid invoices
-      let matchedInv: Invoice | undefined;
-      let conf: BankTx["confidence"] = "NONE";
-      let confLabel = "";
+      if (isDuplicate) {
+        countAlreadyExists++;
+        continue;
+      }
 
-      for (const inv of unpaidInvoices) {
-        const invIdUpper = inv.id.toUpperCase();
-        const purposeUpper = purposeVal.toUpperCase();
-        const custNameUpper = inv.customerName.toUpperCase();
-        const partnerUpper = partnerVal.toUpperCase();
+      tx.id = `TX-${Date.now()}-${i}-${Math.random().toString(36).substr(2, 4)}`;
 
-        const cleanInvId = inv.id.replace(/[^0-9]/g, '');
-        const hasInvNumberInPurpose = cleanInvId && purposeUpper.includes(cleanInvId);
+      // Filter incoming positive bank transfers
+      if (amountVal <= 0) {
+        tx.matchStatus = "Ignoriert";
+        tx.matchReason = "Ausgabe / negativer Betrag ignoriert";
+        tx.confidenceScore = 0;
+        countIgnoredExpenses++;
+        newTxs.push(tx as BankTransaction);
+        continue;
+      }
 
-        const amountMatches = Math.abs(amountVal - inv.amountGross) < 0.05;
+      countIncome++;
 
-        if (amountMatches && (purposeUpper.includes(invIdUpper) || hasInvNumberInPurpose)) {
-          matchedInv = inv;
-          conf = "EXACT";
-          confLabel = "Exakte ID & Betrag";
-          break; // Perfect match, stop searching
-        } else if (amountMatches && (purposeUpper.includes(custNameUpper) || partnerUpper.includes(custNameUpper))) {
-          matchedInv = inv;
-          conf = "HIGH";
-          confLabel = "Kunde & Betrag";
-        } else if (amountMatches && conf === "NONE") {
-          matchedInv = inv;
-          conf = "LOW";
-          confLabel = "Nur Betrag";
-        } else if ((purposeUpper.includes(invIdUpper) || hasInvNumberInPurpose) && conf === "NONE") {
-          matchedInv = inv;
-          conf = "MEDIUM";
-          confLabel = "Abweichender Betrag";
+      // Priority 1: Reference matching
+      const matchedInv = findInvoiceByReference(tx, openInvs);
+
+      if (matchedInv) {
+        const amountMatches = Math.abs(amountVal - matchedInv.amountGross) < 0.05;
+        if (amountMatches) {
+          tx.matchStatus = "Automatisch bestätigt";
+          tx.matchReason = "Referenznummer und Betrag stimmen überein";
+          tx.confidenceScore = 100;
+          tx.matchedInvoiceId = matchedInv.id;
+          countAutoConfirmed++;
+
+          // Auto Reconcile the invoice!
+          updateInvoice(matchedInv.id, {
+            status: "BEZAHLT_BANK",
+            paymentMethod: "Bank transfer",
+            amountPaid: amountVal,
+            history: [
+              {
+                date: new Date().toISOString(),
+                action: `Automatisch durch Bankabgleich am ${tx.bookingDate} als bezahlt verbucht`,
+                user: "System"
+              }
+            ]
+          });
+        } else {
+          tx.matchStatus = "Manuelle Prüfung";
+          tx.matchReason = "Referenz gefunden, Betrag weicht ab";
+          tx.confidenceScore = 80;
+          tx.matchedInvoiceId = matchedInv.id;
+          countManualReview++;
+        }
+      } else {
+        // Priority 2: Amount matching
+        const matchingAmountInvoices = openInvs.filter(inv => Math.abs(amountVal - inv.amountGross) < 0.05);
+
+        if (matchingAmountInvoices.length === 1) {
+          const inv = matchingAmountInvoices[0];
+          const hasNameMatch = JaroWinklerDistance(tx.partnerName || '', inv.customerName) > 0.6;
+
+          tx.matchStatus = "Vorschlag";
+          tx.matchedInvoiceId = inv.id;
+
+          if (hasNameMatch) {
+            tx.matchReason = "Betrag stimmt exakt überein, Auftraggebername ähnelt dem Kundennamen";
+            tx.confidenceScore = 70;
+          } else {
+            tx.matchReason = "Betrag stimmt exakt überein, aber keine Referenz gefunden";
+            tx.confidenceScore = 50;
+          }
+          countManualReview++;
+        } else if (matchingAmountInvoices.length > 1) {
+          tx.matchStatus = "Mehrere mögliche Treffer";
+          tx.matchReason = "Mehrere offene Rechnungen mit gleichem Betrag vorhanden";
+          tx.confidenceScore = 40;
+          tx.matchedInvoiceIds = matchingAmountInvoices.map(inv => inv.id);
+          countManualReview++;
+        } else {
+          tx.matchStatus = "Nicht zugeordnet";
+          tx.matchReason = "Kein passender Betrag oder Referenz gefunden";
+          tx.confidenceScore = 0;
+          countUnassigned++;
         }
       }
 
-      parsedTxs.push({
-        id: `TX-${i}-${Math.random().toString(36).substr(2, 4)}`,
-        date: dateVal,
-        partnerName: partnerVal,
-        purpose: purposeVal,
-        amount: amountVal,
-        matchedInvoice: matchedInv,
-        confidence: conf,
-        confidenceLabel: confLabel || "Keine Übereinstimmung",
-        status: "PENDING"
-      });
+      newTxs.push(tx as BankTransaction);
+      countImported++;
     }
 
-    setTransactions(parsedTxs);
-    toast.success(`${parsedTxs.length} eingehende Transaktionen geladen!`);
+    if (newTxs.length > 0) {
+      addBankTransactions(newTxs);
+    }
+
+    setRecentImportSummary({
+      imported: countImported,
+      alreadyExists: countAlreadyExists,
+      income: countIncome,
+      autoConfirmed: countAutoConfirmed,
+      manualReview: countManualReview,
+      unassigned: countUnassigned,
+      ignoredExpenses: countIgnoredExpenses
+    });
+
+    setActiveSubView("MANUAL");
+    toast.success(`CSV Import abgeschlossen! ${countImported} neue Zeilen verbucht.`);
   };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -777,387 +930,725 @@ function BankReconciliationView({ invoices, updateInvoice }: { invoices: Invoice
   };
 
   const simulateDemoData = () => {
-    setFileName("kontoauszug_simuliert.csv");
-    
-    // Let's build demo data that matches some unpaid invoices if they exist
-    const demoTxs: BankTx[] = [];
-    
-    if (unpaidInvoices.length > 0) {
-      unpaidInvoices.forEach((inv, index) => {
-        // EXACT match
+    setFileName("kontoauszug_österreich_simuliert.csv");
+    const demoTxs: BankTransaction[] = [];
+    const openInvs = invoices.filter(inv => inv.status === "OFFEN" || inv.status === "OVERDUE");
+
+    if (openInvs.length > 0) {
+      openInvs.forEach((inv, index) => {
         if (index === 0) {
+          // Exact Reference & Amount Match (100% Auto Confirmed)
           demoTxs.push({
-            id: `TX-DEMO-${inv.id}`,
-            date: new Date().toISOString().split('T')[0],
+            id: `TX-SIM-${inv.id}`,
+            bookingDate: new Date().toISOString().split('T')[0],
+            valueDate: new Date().toISOString().split('T')[0],
+            bookingText: "GUTSCHRIFT ONLINE BANKING",
+            currency: "EUR",
+            amount: inv.amountGross,
             partnerName: inv.customerName,
             purpose: `Rechnung ${inv.id} - Trada Space CRM`,
-            amount: inv.amountGross,
-            matchedInvoice: inv,
-            confidence: "EXACT",
-            confidenceLabel: "Exakte ID & Betrag",
-            status: "PENDING"
+            matchStatus: "Automatisch bestätigt",
+            matchReason: "Referenznummer und Betrag stimmen überein",
+            confidenceScore: 100,
+            matchedInvoiceId: inv.id
           });
-        } 
-        // HIGH match
-        else if (index === 1) {
+          
+          // Auto reconcile for demo
+          updateInvoice(inv.id, {
+            status: "BEZAHLT_BANK",
+            paymentMethod: "Bank transfer",
+            amountPaid: inv.amountGross,
+            history: [
+              {
+                date: new Date().toISOString(),
+                action: `Automatisch durch Bankabgleich als bezahlt verbucht`,
+                user: "System"
+              }
+            ]
+          });
+        } else if (index === 1) {
+          // Reference Found, Amount Differs (80% Manual Review)
           demoTxs.push({
-            id: `TX-DEMO-${inv.id}`,
-            date: new Date().toISOString().split('T')[0],
+            id: `TX-SIM-${inv.id}`,
+            bookingDate: new Date().toISOString().split('T')[0],
+            valueDate: new Date().toISOString().split('T')[0],
+            bookingText: "SEPA-GUTSCHRIFT OB",
+            currency: "EUR",
+            amount: inv.amountGross + 10.00, // diff amount
             partnerName: inv.customerName,
-            purpose: `Dienstleistungen Social Media Consulting`,
-            amount: inv.amountGross,
-            matchedInvoice: inv,
-            confidence: "HIGH",
-            confidenceLabel: "Kunde & Betrag",
-            status: "PENDING"
+            purpose: `Zahlungsref.: ${inv.id}`,
+            matchStatus: "Manuelle Prüfung",
+            matchReason: "Referenz gefunden, Betrag weicht ab",
+            confidenceScore: 80,
+            matchedInvoiceId: inv.id
           });
-        }
-        // LOW match
-        else {
+        } else if (index === 2) {
+          // Amount matches, name resembles (70% suggestion)
           demoTxs.push({
-            id: `TX-DEMO-${inv.id}`,
-            date: new Date().toISOString().split('T')[0],
-            partnerName: "Andere Firma GmbH",
-            purpose: "Monatspauschale Support",
+            id: `TX-SIM-${inv.id}`,
+            bookingDate: new Date().toISOString().split('T')[0],
+            valueDate: new Date().toISOString().split('T')[0],
+            bookingText: "ONLINE-UEBERWEISUNG",
+            currency: "EUR",
             amount: inv.amountGross,
-            matchedInvoice: inv,
-            confidence: "LOW",
-            confidenceLabel: "Nur Betrag",
-            status: "PENDING"
+            partnerName: inv.customerName.slice(0, 8) + " Ltd.", // resembles name
+            purpose: "Monatliche Betreuungspauschale Social Media",
+            matchStatus: "Vorschlag",
+            matchReason: "Betrag stimmt exakt überein, Auftraggebername ähnelt dem Kundennamen",
+            confidenceScore: 70,
+            matchedInvoiceId: inv.id
+          });
+        } else {
+          // Only amount matches (50% suggestion)
+          demoTxs.push({
+            id: `TX-SIM-${inv.id}`,
+            bookingDate: new Date().toISOString().split('T')[0],
+            valueDate: new Date().toISOString().split('T')[0],
+            bookingText: "SAMMEL-GUTSCHRIFT",
+            currency: "EUR",
+            amount: inv.amountGross,
+            partnerName: "Andere Unbekannte GmbH",
+            purpose: "Projektpauschale",
+            matchStatus: "Vorschlag",
+            matchReason: "Betrag stimmt exakt überein, aber keine Referenz gefunden",
+            confidenceScore: 50,
+            matchedInvoiceId: inv.id
           });
         }
       });
     }
 
-    // Add some random unmatched transaction
+    // Unmatched Google Refund (None)
     demoTxs.push({
-      id: "TX-DEMO-UNMATCHED-1",
-      date: new Date().toISOString().split('T')[0],
-      partnerName: "Google Ireland Ltd.",
-      purpose: "Rückerstattung Google Ads Gutschrift",
+      id: "TX-SIM-UNMATCHED-1",
+      bookingDate: new Date().toISOString().split('T')[0],
+      valueDate: new Date().toISOString().split('T')[0],
+      bookingText: "GOOGLE IRELAND REFUND",
+      currency: "EUR",
       amount: 150.00,
-      confidence: "NONE",
-      confidenceLabel: "Keine Übereinstimmung",
-      status: "PENDING"
+      partnerName: "Google Ireland Ltd.",
+      purpose: "Google Ads Promo Ref",
+      matchStatus: "Nicht zugeordnet",
+      matchReason: "Kein passender Betrag oder Referenz gefunden",
+      confidenceScore: 0
     });
 
+    // Ignored negative expense
     demoTxs.push({
-      id: "TX-DEMO-UNMATCHED-2",
-      date: new Date().toISOString().split('T')[0],
-      partnerName: "Max Mustermann",
-      purpose: "Private Zahlung",
-      amount: 85.00,
-      confidence: "NONE",
-      confidenceLabel: "Keine Übereinstimmung",
-      status: "PENDING"
+      id: "TX-SIM-IGNORED-1",
+      bookingDate: new Date().toISOString().split('T')[0],
+      valueDate: new Date().toISOString().split('T')[0],
+      bookingText: "INTERNETANSCHLUSS KABEL",
+      currency: "EUR",
+      amount: -49.90,
+      partnerName: "A1 Telekom Austria",
+      purpose: "Monatsrechnung Internet Büro",
+      matchStatus: "Ignoriert",
+      matchReason: "Ausgabe / negativer Betrag ignoriert",
+      confidenceScore: 0
     });
 
-    setTransactions(demoTxs);
-    toast.success("Demo-Kontoauszug erfolgreich simuliert!");
+    addBankTransactions(demoTxs);
+    
+    setRecentImportSummary({
+      imported: demoTxs.length,
+      alreadyExists: 0,
+      income: demoTxs.length - 1,
+      autoConfirmed: openInvs.length > 0 ? 1 : 0,
+      manualReview: Math.max(0, openInvs.length - 1),
+      unassigned: 1,
+      ignoredExpenses: 1
+    });
+
+    setActiveSubView("MANUAL");
+    toast.success("Österreichischer Demo-Kontoauszug erfolgreich simuliert!");
   };
 
-  const reconcileSingle = (txId: string, invoiceId: string, txDate: string, amount: number) => {
-    updateInvoice(invoiceId, {
-      status: "BEZAHLT",
-      amountPaid: amount,
-      history: [
-        {
-          date: new Date().toISOString(),
-          action: `Bankabgleich: Kontoauszug-Eingang am ${txDate} verbucht`,
-          user: "System"
-        }
-      ]
-    });
+  const handleManualAction = (txId: string, invoiceId: string, action: "CONFIRM" | "UNASSIGN" | "IGNORE") => {
+    const tx = bankTransactions.find(t => t.id === txId);
+    if (!tx) return;
 
-    setTransactions(prev => 
-      prev.map(tx => tx.id === txId ? { ...tx, status: "RECONCILED" as const } : tx)
-    );
-    toast.success(`Rechnung ${invoiceId} erfolgreich als bezahlt markiert!`);
+    if (action === "CONFIRM") {
+      updateInvoice(invoiceId, {
+        status: "BEZAHLT_BANK",
+        paymentMethod: "Bank transfer",
+        amountPaid: tx.amount,
+        history: [
+          {
+            date: new Date().toISOString(),
+            action: `Bankabgleich: Manuell bestätigt und am ${tx.bookingDate} verbucht`,
+            user: "Admin"
+          }
+        ]
+      });
+
+      updateBankTransaction(txId, {
+        matchStatus: "Automatisch bestätigt", // mark as reconciled / confirmed
+        matchedInvoiceId: invoiceId,
+        matchReason: "Manuell bestätigt"
+      });
+
+      toast.success(`Rechnung ${invoiceId} erfolgreich als bezahlt markiert!`);
+    } else if (action === "UNASSIGN") {
+      updateBankTransaction(txId, {
+        matchStatus: "Nicht zugeordnet",
+        matchedInvoiceId: undefined,
+        matchedInvoiceIds: undefined,
+        matchReason: "Vom Benutzer als nicht zugeordnet markiert",
+        confidenceScore: 0
+      });
+      toast.info("Transaktion als nicht zugeordnet markiert.");
+    } else if (action === "IGNORE") {
+      updateBankTransaction(txId, {
+        matchStatus: "Ignoriert",
+        matchReason: "Vom Benutzer manuell ignoriert"
+      });
+      toast.info("Transaktion ignoriert.");
+    }
+
+    setAssigningTxId(null);
   };
 
-  const reconcileAllMatches = () => {
-    let count = 0;
-    transactions.forEach(tx => {
-      if (tx.status === "PENDING" && tx.matchedInvoice && (tx.confidence === "EXACT" || tx.confidence === "HIGH")) {
-        updateInvoice(tx.matchedInvoice.id, {
-          status: "BEZAHLT",
-          amountPaid: tx.amount,
-          history: [
-            {
-              date: new Date().toISOString(),
-              action: `Bankabgleich: Automatische Sammelbuchung am ${tx.date}`,
-              user: "System"
-            }
-          ]
-        });
-        count++;
-      }
-    });
-
-    if (count > 0) {
-      setTransactions(prev => 
-        prev.map(tx => (tx.status === "PENDING" && tx.matchedInvoice && (tx.confidence === "EXACT" || tx.confidence === "HIGH")) ? { ...tx, status: "RECONCILED" as const } : tx)
-      );
-      toast.success(`${count} Rechnungen wurden automatisch abgeglichen!`);
-    } else {
-      toast.info("Keine eindeutigen Übereinstimmungen zum automatischen Buchen vorhanden.");
+  const resetAllTransactions = () => {
+    if (confirm("Möchten Sie wirklich die gesamte Import-Historie löschen?")) {
+      clearBankTransactions();
+      setFileName("");
+      setRecentImportSummary(null);
+      setActiveSubView("IMPORT");
+      toast.success("Import-Historie vollständig zurückgesetzt.");
     }
   };
 
-  const discardTransaction = (txId: string) => {
-    setTransactions(prev => 
-      prev.map(tx => tx.id === txId ? { ...tx, status: "IGNORED" as const } : tx)
+  // Grouped Filter lists based on subviews
+  const manualList = useMemo(() => {
+    return bankTransactions.filter(t => 
+      t.matchStatus === "Manuelle Prüfung" || 
+      t.matchStatus === "Vorschlag" || 
+      t.matchStatus === "Mehrere mögliche Treffer"
     );
-    toast.info("Transaktion ignoriert.");
-  };
+  }, [bankTransactions]);
 
-  const resetAll = () => {
-    setTransactions([]);
-    setFileName("");
-  };
+  const autoList = useMemo(() => {
+    return bankTransactions.filter(t => t.matchStatus === "Automatisch bestätigt");
+  }, [bankTransactions]);
 
-  const pendingMatches = transactions.filter(tx => tx.status === "PENDING" && tx.matchedInvoice);
-  const pendingCount = pendingMatches.length;
+  const unassignedList = useMemo(() => {
+    return bankTransactions.filter(t => t.matchStatus === "Nicht zugeordnet");
+  }, [bankTransactions]);
+
+  const historyList = useMemo(() => {
+    return bankTransactions.filter(t => {
+      const matchesSearch = 
+        t.partnerName.toLowerCase().includes(searchHistoryTerm.toLowerCase()) ||
+        t.purpose.toLowerCase().includes(searchHistoryTerm.toLowerCase()) ||
+        t.bookingText.toLowerCase().includes(searchHistoryTerm.toLowerCase());
+      
+      const matchesStatus = filterHistoryStatus === "ALL" || t.matchStatus === filterHistoryStatus;
+      
+      return matchesSearch && matchesStatus;
+    });
+  }, [bankTransactions, searchHistoryTerm, filterHistoryStatus]);
+
+  const getStatusPillColor = (status: string) => {
+    switch (status) {
+      case "Automatisch bestätigt": return "bg-emerald-50 text-emerald-600 border-emerald-100";
+      case "Manuelle Prüfung": return "bg-orange-50 text-orange-600 border-orange-100";
+      case "Vorschlag": return "bg-blue-50 text-blue-600 border-blue-100";
+      case "Mehrere mögliche Treffer": return "bg-purple-50 text-purple-600 border-purple-100";
+      case "Nicht zugeordnet": return "bg-gray-50 text-gray-500 border-gray-100";
+      case "Ignoriert": return "bg-red-50 text-red-400 border-red-100";
+      default: return "bg-gray-50 text-gray-400 border-gray-100";
+    }
+  };
 
   return (
-    <div className="space-y-4 animate-in fade-in duration-200">
-      <div className="bg-white rounded-2xl border border-gray-100 p-4 shadow-sm">
-        <h3 className="text-sm font-bold text-gray-900 tracking-tight flex items-center gap-1.5">
-          <Sparkles className="h-4 w-4 text-brand-secondary" />
-          Bankabgleich (Kontoauszug-Abstimmung)
-        </h3>
-        <p className="text-[11px] text-gray-400 mt-1 font-medium leading-relaxed">
-          Laden Sie Ihre monatliche Bank-Exportdatei (CSV) hoch. Unser System gleicht eingehende Zahlungen mit Ihren offenen Rechnungen ab.
-        </p>
+    <div className="space-y-6 animate-in fade-in duration-200">
+      {/* Intro Header */}
+      <div className="bg-white rounded-3xl border border-gray-100 p-6 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div className="space-y-1">
+          <h3 className="text-base font-black text-gray-900 tracking-tight flex items-center gap-1.5">
+            <Sparkles className="h-4 w-4 text-brand-secondary animate-pulse" />
+            Kontoauszug-Abgleich (Bank Reconciliation)
+          </h3>
+          <p className="text-[11px] text-gray-400 font-medium leading-relaxed max-w-2xl">
+            Importieren Sie Ihre Bankauszüge im CSV-Format. Unser System gleicht Zahlungseingänge automatisch über Rechnungsnummern und Beträge mit offenen Rechnungen ab.
+          </p>
+        </div>
+        {bankTransactions.length > 0 && (
+          <button 
+            onClick={resetAllTransactions}
+            className="px-4 py-2 border border-red-100 bg-red-50/50 hover:bg-red-50 text-red-500 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all shrink-0"
+          >
+            Historie Löschen
+          </button>
+        )}
       </div>
 
-      {transactions.length === 0 ? (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-          {/* Drag & Drop Upload Zone */}
-          <div className="lg:col-span-2">
+      {/* Subnavigation Tabs */}
+      <div className="flex items-center gap-3 border-b border-gray-100 pb-px overflow-x-auto whitespace-nowrap hide-scrollbar">
+        {[
+          { id: "IMPORT", label: "CSV-Import", count: null },
+          { id: "MANUAL", label: "Manuelle Prüfung", count: manualList.length },
+          { id: "AUTO", label: "Automatisch bestätigt", count: autoList.length },
+          { id: "UNASSIGNED", label: "Nicht zugeordnet", count: unassignedList.length },
+          { id: "HISTORY", label: "Import-Historie", count: bankTransactions.length }
+        ].map(tab => (
+          <button
+            key={tab.id}
+            onClick={() => setActiveSubView(tab.id as any)}
+            className={`pb-2.5 text-xs font-bold transition-all border-b-2 flex items-center gap-1.5 ${
+              activeSubView === tab.id 
+                ? "text-black border-black" 
+                : "text-gray-400 border-transparent hover:text-gray-600"
+            }`}
+          >
+            <span>{tab.label}</span>
+            {tab.count !== null && (
+              <span className={`px-1.5 py-0.5 rounded text-[8px] font-extrabold ${
+                activeSubView === tab.id ? "bg-black text-white" : "bg-gray-50 text-gray-400 border border-gray-100"
+              }`}>{tab.count}</span>
+            )}
+          </button>
+        ))}
+      </div>
+
+      {/* VIEW: CSV IMPORT */}
+      {activeSubView === "IMPORT" && (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <div className="lg:col-span-2 space-y-4">
             <div 
               onDragEnter={handleDrag}
               onDragOver={handleDrag}
               onDragLeave={handleDrag}
               onDrop={handleDrop}
-              className={`h-[240px] border-2 border-dashed rounded-2xl flex flex-col items-center justify-center text-center p-6 transition-all ${
+              className={`h-[280px] border-2 border-dashed rounded-3xl flex flex-col items-center justify-center text-center p-8 transition-all ${
                 dragActive 
-                  ? "border-brand-secondary bg-brand-secondary/5 scale-98" 
-                  : "border-gray-200 bg-white hover:border-gray-300"
+                  ? "border-brand-secondary bg-brand-secondary/5 scale-98 shadow-inner" 
+                  : "border-gray-200 bg-white hover:border-gray-300 shadow-sm"
               }`}
             >
-              <div className="h-10 w-10 bg-gray-50 rounded-xl flex items-center justify-center mb-3 shadow-inner text-gray-400">
-                <UploadCloud className="h-5 w-5 text-gray-400" />
+              <div className="h-14 w-14 bg-neutral-900/5 rounded-2xl flex items-center justify-center mb-4 text-gray-400">
+                <UploadCloud className="h-7 w-7 text-neutral-800" />
               </div>
-              <h4 className="text-xs font-bold text-gray-900">Kontoauszug hochladen (.CSV)</h4>
-              <p className="text-[10px] text-gray-400 max-w-sm mt-1.5 leading-relaxed font-medium">
-                Sparkasse, Deutsche Bank, Volksbank, N26, Stripe, etc. werden automatisch eingelesen.
+              <h4 className="text-sm font-bold text-gray-900">Kontoauszug-Datei hochladen (.CSV)</h4>
+              <p className="text-[10px] text-gray-400 max-w-sm mt-2 leading-relaxed font-medium">
+                Verwenden Sie den CSV-Export Ihrer Bank (z.B. Sparkasse, Erste Bank, Raiffeisen, Deutsche Bank). Die Datei wird per Semikolon und mit robustem Zeichen-Encoding eingelesen.
               </p>
               
-              <div className="mt-4 flex items-center gap-3">
-                <label className="px-4 py-2 bg-black text-white rounded-xl text-[9px] font-black uppercase tracking-widest hover:scale-105 transition-all shadow-md cursor-pointer">
+              <div className="mt-6 flex items-center gap-3">
+                <label className="px-5 py-3 bg-black text-white rounded-xl text-[9px] font-black uppercase tracking-widest hover:scale-105 active:scale-95 transition-all shadow-md cursor-pointer">
                   Datei Auswählen
                   <input type="file" accept=".csv" className="hidden" onChange={handleFileUpload} />
                 </label>
                 
                 <button 
                   onClick={simulateDemoData}
-                  className="px-4 py-2 bg-brand-secondary/5 text-brand-secondary border border-brand-secondary/15 rounded-xl text-[9px] font-black uppercase tracking-widest hover:bg-brand-secondary/10 transition-all flex items-center gap-1"
+                  className="px-5 py-3 bg-brand-secondary/5 text-brand-secondary border border-brand-secondary/15 rounded-xl text-[9px] font-black uppercase tracking-widest hover:bg-brand-secondary/10 transition-all flex items-center gap-1.5"
                 >
-                  <Sparkles className="h-3 w-3" />
+                  <Sparkles className="h-3.5 w-3.5 animate-pulse" />
                   <span>Demo-Daten simulieren</span>
                 </button>
               </div>
             </div>
           </div>
 
-          {/* Help / Instructions panel */}
-          <div className="bg-white rounded-2xl border border-gray-100 p-4 space-y-3">
-            <h4 className="text-xs font-bold text-gray-900 border-b border-gray-50 pb-1.5">Wie funktioniert es?</h4>
-            <div className="space-y-3">
-              <div className="flex gap-2.5">
-                <div className="h-5 w-5 bg-gray-50 rounded flex items-center justify-center text-[10px] font-black text-gray-900 shrink-0">1</div>
-                <p className="text-[10px] text-gray-500 font-medium leading-relaxed">
-                  Exportieren Sie Ihren Kontoauszug bei Ihrer Bank als <strong>CSV-Datei</strong>.
-                </p>
-              </div>
-              <div className="flex gap-2.5">
-                <div className="h-5 w-5 bg-gray-50 rounded flex items-center justify-center text-[10px] font-black text-gray-900 shrink-0">2</div>
-                <p className="text-[10px] text-gray-500 font-medium leading-relaxed">
-                  Spalten wie Buchungstext, Betrag und Verwendungszweck werden automatisch erkannt.
-                </p>
-              </div>
-              <div className="flex gap-2.5">
-                <div className="h-5 w-5 bg-gray-50 rounded flex items-center justify-center text-[10px] font-black text-gray-900 shrink-0">3</div>
-                <p className="text-[10px] text-gray-500 font-medium leading-relaxed">
-                  Betrag und Verwendungszweck werden mit <strong>offenen Rechnungen ({unpaidInvoices.length})</strong> abgeglichen.
-                </p>
-              </div>
-              <div className="flex gap-2.5">
-                <div className="h-5 w-5 bg-gray-50 rounded flex items-center justify-center text-[10px] font-black text-gray-900 shrink-0">4</div>
-                <p className="text-[10px] text-gray-500 font-medium leading-relaxed">
-                  Sie verbuchen Zuweisungen mit einem Klick sofort als <strong>Bezahlt</strong>.
-                </p>
-              </div>
+          <div className="bg-white rounded-3xl border border-gray-100 p-6 space-y-4 shadow-sm text-xs">
+            <h4 className="text-xs font-black text-gray-900 border-b border-gray-50 pb-2 uppercase tracking-wider">Verarbeitete Spalten</h4>
+            <p className="text-[10px] text-gray-400 leading-normal font-medium">Die CSV-Datei sollte Semikolon-getrennt vorliegen. Folgende Felder werden für den automatischen Abgleich ausgewertet:</p>
+            <ul className="grid grid-cols-2 gap-2 text-[10px] text-gray-500 font-bold">
+               <li className="flex items-center gap-1.5"><div className="h-1.5 w-1.5 rounded-full bg-emerald-400" /> Buchungsdatum</li>
+               <li className="flex items-center gap-1.5"><div className="h-1.5 w-1.5 rounded-full bg-emerald-400" /> Valutadatum</li>
+               <li className="flex items-center gap-1.5"><div className="h-1.5 w-1.5 rounded-full bg-emerald-400" /> Betrag (positive Werte)</li>
+               <li className="flex items-center gap-1.5"><div className="h-1.5 w-1.5 rounded-full bg-emerald-400" /> Auftraggebername</li>
+               <li className="flex items-center gap-1.5"><div className="h-1.5 w-1.5 rounded-full bg-emerald-400" /> Zahlungsgrund</li>
+               <li className="flex items-center gap-1.5"><div className="h-1.5 w-1.5 rounded-full bg-emerald-400" /> Zahlungsreferenz</li>
+               <li className="flex items-center gap-1.5"><div className="h-1.5 w-1.5 rounded-full bg-emerald-400" /> Buchungstext</li>
+               <li className="flex items-center gap-1.5"><div className="h-1.5 w-1.5 rounded-full bg-emerald-400" /> Belegnummer</li>
+            </ul>
+            <div className="bg-blue-50/50 border border-blue-100 p-4 rounded-2xl text-[10px] text-blue-600 leading-normal font-semibold">
+               <strong>Hinweis:</strong> Nur Kombinationen aus passender Referenz/Rechnungsnummer + übereinstimmendem Betrag werden automatisch freigegeben. Reine Betrag-Matches bedürfen stets einer Freigabe.
             </div>
           </div>
         </div>
-      ) : (
+      )}
+
+      {/* VIEW: RECENT IMPORT SUMMARY */}
+      {recentImportSummary && (
+        <div className="bg-gray-50/70 border border-gray-100 rounded-3xl p-6 grid grid-cols-2 md:grid-cols-7 gap-4 text-center items-center shadow-inner animate-in fade-in duration-200">
+           <div>
+              <p className="text-[8px] font-black text-gray-400 uppercase tracking-wider mb-0.5">Neu Importiert</p>
+              <h4 className="text-xl font-black text-gray-900">{recentImportSummary.imported}</h4>
+           </div>
+           <div>
+              <p className="text-[8px] font-black text-gray-400 uppercase tracking-wider mb-0.5">Duplikate (Übersprungen)</p>
+              <h4 className="text-xl font-black text-gray-500">{recentImportSummary.alreadyExists}</h4>
+           </div>
+           <div>
+              <p className="text-[8px] font-black text-gray-400 uppercase tracking-wider mb-0.5">Zahlungseingänge</p>
+              <h4 className="text-xl font-black text-emerald-600">{recentImportSummary.income}</h4>
+           </div>
+           <div>
+              <p className="text-[8px] font-black text-gray-400 uppercase tracking-wider mb-0.5">Automatisch Verbucht</p>
+              <h4 className="text-xl font-black text-emerald-600 flex items-center justify-center gap-1">
+                 {recentImportSummary.autoConfirmed}
+                 <Check className="h-4 w-4 text-emerald-500" />
+              </h4>
+           </div>
+           <div>
+              <p className="text-[8px] font-black text-gray-400 uppercase tracking-wider mb-0.5">Prüfvorschläge</p>
+              <h4 className="text-xl font-black text-orange-500">{recentImportSummary.manualReview}</h4>
+           </div>
+           <div>
+              <p className="text-[8px] font-black text-gray-400 uppercase tracking-wider mb-0.5">Nicht Zugeordnet</p>
+              <h4 className="text-xl font-black text-gray-400">{recentImportSummary.unassigned}</h4>
+           </div>
+           <div>
+              <p className="text-[8px] font-black text-gray-400 uppercase tracking-wider mb-0.5">Ignorierte Ausgaben</p>
+              <h4 className="text-xl font-black text-red-400">{recentImportSummary.ignoredExpenses}</h4>
+           </div>
+        </div>
+      )}
+
+      {/* VIEW: MANUELLE PRÜFUNG */}
+      {activeSubView === "MANUAL" && (
         <div className="space-y-4">
-          {/* File loaded stats header */}
-          <div className="bg-white rounded-2xl border border-gray-100 p-4 shadow-sm flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-            <div className="space-y-1">
-              <div className="flex items-center gap-2">
-                <div className="px-2 py-0.5 bg-brand-secondary/5 text-brand-secondary text-[8px] font-bold uppercase tracking-wider rounded flex items-center gap-1">
-                  <FileSpreadsheet className="h-3 w-3" /> {fileName}
-                </div>
-                <span className="text-[10px] text-gray-400 font-medium">({transactions.length} Zeilen eingelesen)</span>
-              </div>
-              <h4 className="text-sm font-bold text-gray-900">{pendingCount} Übereinstimmungen gefunden</h4>
-            </div>
-
-            <div className="flex items-center gap-2">
-              {pendingCount > 0 && (
-                <button 
-                  onClick={reconcileAllMatches}
-                  className="px-4 py-2 bg-black text-white rounded-xl text-[9px] font-black uppercase tracking-widest hover:scale-[1.02] transition-all shadow-md flex items-center gap-1.5"
-                >
-                  <Check className="h-3.5 w-3.5" />
-                  <span>Alle Verbuchen</span>
-                </button>
-              )}
-              <button 
-                onClick={resetAll}
-                className="px-4 py-2 bg-gray-50 text-gray-500 hover:text-black rounded-xl text-[9px] font-black uppercase tracking-widest transition-all border border-gray-100"
-              >
-                Zurücksetzen
-              </button>
-            </div>
+          <div className="flex items-center justify-between px-1">
+            <h4 className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Auszustehende manuelle Bestätigungen ({manualList.length})</h4>
           </div>
 
-          {/* Matched Transactions List */}
-          <div className="space-y-3">
-            <h4 className="text-[9px] font-bold text-gray-400 uppercase tracking-widest px-1">Vorschlagsliste & Abgleich</h4>
-            
-            {transactions.filter(t => t.status === "PENDING").map((tx) => (
-              <div 
-                key={tx.id} 
-                className={`bg-white rounded-2xl border p-4 flex flex-col lg:flex-row items-center justify-between gap-4 transition-all hover:shadow-sm ${
-                  tx.matchedInvoice 
-                    ? tx.confidence === "EXACT" || tx.confidence === "HIGH" 
-                      ? "border-emerald-100 hover:border-emerald-200" 
-                      : "border-orange-100 hover:border-orange-200" 
-                    : "border-gray-100 bg-gray-50/10"
-                }`}
-              >
-                {/* Left: Bank statement details */}
-                <div className="flex-1 space-y-1.5 min-w-0">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-[9px] font-bold text-gray-400 uppercase tracking-widest">{tx.date}</span>
-                    <span className="px-2 py-0.5 bg-gray-50 text-gray-500 rounded text-[8px] font-bold uppercase tracking-wider">Kontoauszug</span>
-                  </div>
-                  <div>
-                    <h5 className="text-xs font-bold text-gray-900 truncate" title={tx.partnerName}>{tx.partnerName}</h5>
-                    <p className="text-[10px] text-gray-400 font-medium truncate mt-0.5" title={tx.purpose}>{tx.purpose || 'Kein Verwendungszweck angegeben'}</p>
-                  </div>
-                  <div className="text-xs font-black text-emerald-600">
-                    + €{tx.amount.toLocaleString('de-DE', { minimumFractionDigits: 2 })}
-                  </div>
-                </div>
+          {manualList.length > 0 ? (
+            <div className="space-y-4">
+              {manualList.map((tx) => {
+                const suggestedInv = invoices.find(inv => inv.id === tx.matchedInvoiceId);
+                const isMultiple = tx.matchStatus === "Mehrere mögliche Treffer";
+                const possibleInvoices = tx.matchedInvoiceIds ? invoices.filter(inv => tx.matchedInvoiceIds?.includes(inv.id)) : [];
 
-                {/* Middle: Connection line / Indicator */}
-                <div className="hidden lg:flex flex-col items-center justify-center px-2">
-                  {tx.matchedInvoice ? (
-                    <div className="h-6 w-6 bg-emerald-50 rounded-full flex items-center justify-center text-emerald-600">
-                      <CheckCircle2 className="h-3.5 w-3.5" />
-                    </div>
-                  ) : (
-                    <div className="h-6 w-6 bg-gray-100 rounded-full flex items-center justify-center text-gray-300">
-                      <AlertCircle className="h-3.5 w-3.5" />
-                    </div>
-                  )}
-                  <div className="h-2 w-px bg-gray-100 my-0.5" />
-                </div>
+                return (
+                  <div 
+                    key={tx.id} 
+                    className="bg-white rounded-3xl border border-gray-100 p-6 flex flex-col xl:flex-row justify-between gap-6 hover:shadow-md transition-all border-l-4 border-l-orange-500"
+                  >
+                     {/* Left: Transaction details */}
+                     <div className="flex-1 space-y-4 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                           <span className="text-[10px] font-extrabold text-gray-400">{tx.bookingDate}</span>
+                           <span className="text-[8px] px-1.5 py-0.5 font-bold uppercase tracking-wider bg-gray-50 border border-gray-100 rounded text-gray-400">SEPA-Eingang</span>
+                        </div>
+                        <div className="space-y-1">
+                           <h5 className="text-sm font-black text-gray-900 truncate">{tx.partnerName}</h5>
+                           {tx.partnerAccount && <p className="text-[9px] font-bold text-gray-400 uppercase">Konto: {tx.partnerAccount} {tx.partnerBankCode ? `• BLZ: ${tx.partnerBankCode}` : ''}</p>}
+                           <p className="text-xs text-gray-500 leading-normal whitespace-pre-line bg-gray-50 p-3 rounded-2xl border border-gray-50 mt-2 font-medium" title={tx.purpose}>
+                              {tx.purpose || 'Kein Verwendungszweck angegeben'}
+                           </p>
+                        </div>
+                        <div className="text-base font-extrabold text-emerald-600">
+                           + {formatCurrency(tx.amount)}
+                        </div>
+                     </div>
 
-                {/* Right: Matched invoice card */}
-                <div className="flex-1 space-y-2 w-full lg:w-auto">
-                  {tx.matchedInvoice ? (
-                    <div className={`p-3 rounded-xl border ${
-                      tx.confidence === "EXACT" || tx.confidence === "HIGH" 
-                        ? "bg-emerald-50/20 border-emerald-100" 
-                        : "bg-orange-50/20 border-orange-100"
-                    }`}>
-                      <div className="flex items-center justify-between gap-2 mb-1.5">
-                        <span className="text-[10px] font-bold text-gray-900">{tx.matchedInvoice.id}</span>
-                        <span className={`px-1.5 py-0.5 rounded text-[7px] font-bold uppercase tracking-widest ${
-                          tx.confidence === "EXACT" 
-                            ? "bg-emerald-500 text-white" 
-                            : tx.confidence === "HIGH" 
-                              ? "bg-emerald-100 text-emerald-700" 
-                              : "bg-orange-100 text-orange-700"
-                        }`}>
-                          {tx.confidenceLabel}
-                        </span>
-                      </div>
-                      <p className="text-[10px] font-bold text-gray-800">{tx.matchedInvoice.customerName}</p>
-                      <div className="flex justify-between items-center mt-3 border-t border-gray-100/50 pt-2">
-                        <div>
-                          <p className="text-[8px] font-bold text-gray-400 uppercase tracking-widest leading-none">Summe</p>
-                          <p className="text-xs font-bold text-gray-900 mt-0.5">€{tx.matchedInvoice.amountGross.toLocaleString('de-DE', { minimumFractionDigits: 2 })}</p>
+                     {/* Right: Suggested Invoice / Matching Card */}
+                     <div className="flex-1 w-full xl:max-w-md bg-gray-50/50 border border-gray-100/50 p-5 rounded-3xl flex flex-col justify-between gap-4">
+                        <div className="space-y-2">
+                           <div className="flex items-center justify-between gap-2">
+                              <span className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Abgleichvorschlag</span>
+                              <span className={`px-2 py-0.5 rounded text-[8px] font-bold uppercase tracking-widest border ${getStatusPillColor(tx.matchStatus)}`}>
+                                 {tx.matchStatus} ({tx.confidenceScore}%)
+                              </span>
+                           </div>
+                           <p className="text-[10px] text-gray-500 font-bold italic leading-relaxed">
+                              Match-Grund: {tx.matchReason}
+                           </p>
                         </div>
-                        
-                        <div className="flex gap-1.5">
-                          <button 
-                            onClick={() => reconcileSingle(tx.id, tx.matchedInvoice!.id, tx.date, tx.amount)}
-                            className="px-2.5 py-1 bg-emerald-600 text-white rounded text-[8px] font-bold uppercase tracking-wider hover:scale-105 transition-all shadow-sm"
-                          >
-                            Verbuchen
-                          </button>
-                          <button 
-                            onClick={() => discardTransaction(tx.id)}
-                            className="p-1 bg-gray-100 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded transition-all"
-                            title="Ignorieren"
-                          >
-                            <X className="h-3 w-3" />
-                          </button>
+
+                        {/* Multiple potential matches choice */}
+                        {isMultiple && possibleInvoices.length > 0 && (
+                          <div className="space-y-2 mt-2">
+                             <p className="text-[9px] font-black text-gray-400 uppercase">Bitte Rechnung manuell auswählen:</p>
+                             <div className="space-y-1.5">
+                                {possibleInvoices.map(inv => (
+                                   <button
+                                     key={inv.id}
+                                     onClick={() => handleManualAction(tx.id, inv.id, "CONFIRM")}
+                                     className="w-full text-left bg-white border border-gray-100 hover:border-brand-secondary/40 p-2.5 rounded-xl transition-all flex items-center justify-between text-xs font-bold group"
+                                   >
+                                      <div>
+                                         <p className="text-gray-900">{inv.id} ({inv.customerName})</p>
+                                         <p className="text-[9px] text-gray-400 font-medium">Datum: {inv.date}</p>
+                                      </div>
+                                      <span className="text-brand-secondary group-hover:underline text-[10px]">Auswählen</span>
+                                   </button>
+                                ))}
+                             </div>
+                          </div>
+                        )}
+
+                        {/* Single matched invoice */}
+                        {!isMultiple && suggestedInv && (
+                          <div className="bg-white border border-gray-100 rounded-2xl p-4 space-y-2 text-xs">
+                             <div className="flex justify-between items-center font-bold text-gray-900">
+                                <span>{suggestedInv.id}</span>
+                                <span>{formatCurrency(suggestedInv.amountGross)}</span>
+                             </div>
+                             <p className="font-extrabold text-gray-800">{suggestedInv.customerName}</p>
+                             <p className="text-[9px] text-gray-400 font-semibold">Netto: {formatCurrency(suggestedInv.amountNet)} • Erstellt am: {suggestedInv.date}</p>
+                             
+                             <div className="pt-3 flex gap-2 border-t border-gray-50 mt-2">
+                                <button
+                                  onClick={() => handleManualAction(tx.id, suggestedInv.id, "CONFIRM")}
+                                  className="flex-1 py-2 bg-emerald-600 text-white rounded-lg text-[9px] font-black uppercase tracking-wider hover:scale-[1.02] active:scale-95 transition-all shadow-sm"
+                                >
+                                   Bestätigen
+                                </button>
+                                <button
+                                  onClick={() => setAssigningTxId(assigningTxId === tx.id ? null : tx.id)}
+                                  className="px-2.5 py-2 border border-gray-100 bg-gray-50 text-gray-500 rounded-lg text-[9px] font-black uppercase tracking-wider hover:bg-gray-100 transition-all"
+                                >
+                                   Abweichend zuordnen
+                                </button>
+                             </div>
+                          </div>
+                        )}
+
+                        {/* Assign Different Invoice Dropdown panel */}
+                        {(assigningTxId === tx.id || (!suggestedInv && !isMultiple)) && (
+                          <div className="space-y-2 bg-white border border-gray-100 p-4 rounded-2xl">
+                             <label className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Rechnung manuell zuweisen</label>
+                             <select
+                               onChange={(e) => {
+                                 if (e.target.value) {
+                                   handleManualAction(tx.id, e.target.value, "CONFIRM");
+                                 }
+                               }}
+                               defaultValue=""
+                               className="w-full bg-gray-50 border border-gray-100 text-xs font-bold rounded-xl px-2 py-2 outline-none"
+                             >
+                                <option value="" disabled>Rechnung auswählen...</option>
+                                {openInvoices.map(inv => (
+                                   <option key={inv.id} value={inv.id}>
+                                      {inv.id} - {inv.customerName} ({formatCurrency(inv.amountGross)})
+                                   </option>
+                                ))}
+                             </select>
+                          </div>
+                        )}
+
+                        <div className="flex gap-2 justify-end text-[9px] font-black uppercase mt-1">
+                           <button 
+                             onClick={() => handleManualAction(tx.id, '', "UNASSIGN")}
+                             className="text-gray-400 hover:text-gray-600 transition-colors"
+                           >
+                              Als nicht zugeordnet markieren
+                           </button>
+                           <span className="text-gray-200">•</span>
+                           <button 
+                             onClick={() => handleManualAction(tx.id, '', "IGNORE")}
+                             className="text-red-400 hover:text-red-650 transition-colors"
+                           >
+                              Ignorieren
+                           </button>
                         </div>
+                     </div>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="bg-white rounded-3xl border border-gray-100 p-16 text-center space-y-3 shadow-sm">
+               <div className="h-12 w-12 bg-emerald-50 text-emerald-600 rounded-full flex items-center justify-center mx-auto border border-emerald-100">
+                  <Check className="h-6 w-6" />
+               </div>
+               <h4 className="text-sm font-bold text-gray-900">Keine Prüffälle offen!</h4>
+               <p className="text-xs text-gray-400 max-w-xs mx-auto leading-relaxed">
+                  Alle importierten Zahlungseingänge sind entweder bereits automatisch bestätigt, manuell verbucht oder ignoriert.
+               </p>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* VIEW: AUTOMATISCH BESTÄTIGT */}
+      {activeSubView === "AUTO" && (
+        <div className="space-y-4">
+          <div className="flex items-center justify-between px-1">
+            <h4 className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Automatisch oder manuell verarbeitete Zahlungen ({autoList.length})</h4>
+          </div>
+
+          {autoList.length > 0 ? (
+            <div className="overflow-x-auto border border-gray-100 rounded-3xl overflow-hidden bg-white shadow-sm">
+               <table className="w-full text-left text-xs">
+                  <thead>
+                     <tr className="bg-gray-50/50 border-b border-gray-100">
+                        <th className="px-5 py-3.5 font-bold text-gray-400 uppercase tracking-wider">Datum</th>
+                        <th className="px-5 py-3.5 font-bold text-gray-400 uppercase tracking-wider">Auftraggeber</th>
+                        <th className="px-5 py-3.5 font-bold text-gray-400 uppercase tracking-wider">Zahlungsgrund / Verwendungszweck</th>
+                        <th className="px-5 py-3.5 font-bold text-gray-400 uppercase tracking-wider">Zugeordnete Rechnung</th>
+                        <th className="px-5 py-3.5 text-right font-bold text-gray-400 uppercase tracking-wider">Betrag</th>
+                     </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-50 font-medium text-gray-700">
+                     {autoList.map((tx) => (
+                        <tr key={tx.id} className="hover:bg-gray-50/30 transition-colors">
+                           <td className="px-5 py-4 text-gray-400 font-bold">{tx.bookingDate}</td>
+                           <td className="px-5 py-4 font-bold text-gray-900">{tx.partnerName}</td>
+                           <td className="px-5 py-4 text-[10px] leading-relaxed max-w-xs truncate" title={tx.purpose}>{tx.purpose || "-"}</td>
+                           <td className="px-5 py-4">
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-emerald-50 text-[10px] font-bold text-emerald-600 border border-emerald-100/50">
+                                 <Check className="h-3 w-3" />
+                                 {tx.matchedInvoiceId}
+                              </span>
+                           </td>
+                           <td className="px-5 py-4 text-right font-extrabold text-emerald-600">+ {formatCurrency(tx.amount)}</td>
+                        </tr>
+                     ))}
+                  </tbody>
+               </table>
+            </div>
+          ) : (
+            <div className="bg-white rounded-3xl border border-gray-100 p-16 text-center space-y-3 shadow-sm">
+               <AlertCircle className="h-10 w-10 text-gray-200 mx-auto" />
+               <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Noch keine bestätigten Zahlungen vorhanden.</p>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* VIEW: NICHT ZUGEORDNET */}
+      {activeSubView === "UNASSIGNED" && (
+        <div className="space-y-4">
+          <div className="flex items-center justify-between px-1">
+            <h4 className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Nicht zugeordnete Banktransaktionen ({unassignedList.length})</h4>
+          </div>
+
+          {unassignedList.length > 0 ? (
+            <div className="space-y-4">
+              {unassignedList.map((tx) => (
+                <div 
+                  key={tx.id} 
+                  className="bg-white rounded-3xl border border-gray-100 p-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-6"
+                >
+                   <div className="space-y-2 min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                         <span className="text-[9px] font-bold text-gray-400">{tx.bookingDate}</span>
+                         <span className="px-2 py-0.5 bg-gray-50 border border-gray-100 rounded text-[8px] font-bold text-gray-400 uppercase">Nicht Zugewiesen</span>
                       </div>
-                    </div>
-                  ) : (
-                    <div className="p-3 rounded-xl bg-gray-50 border border-gray-100 flex flex-col items-center justify-center text-center h-full min-h-[90px] space-y-1">
-                      <AlertCircle className="h-4 w-4 text-gray-300" />
-                      <p className="text-[9px] font-bold text-gray-400 uppercase tracking-widest">Kein Vorschlag</p>
-                      <p className="text-[9px] text-gray-400 leading-normal">ID oder Kunde nicht gefunden.</p>
-                      <button 
-                        onClick={() => discardTransaction(tx.id)}
-                        className="text-[8px] font-bold uppercase tracking-wider text-gray-400 hover:text-red-500 transition-colors mt-1"
+                      <h5 className="text-xs font-black text-gray-900 truncate">{tx.partnerName}</h5>
+                      <p className="text-[10px] text-gray-400 leading-normal truncate">{tx.purpose || 'Kein Verwendungszweck'}</p>
+                      <p className="text-xs font-extrabold text-gray-900">+ {formatCurrency(tx.amount)}</p>
+                   </div>
+                   
+                   <div className="w-full md:w-auto flex items-center gap-3 shrink-0">
+                      <select
+                        onChange={(e) => {
+                          if (e.target.value) {
+                            handleManualAction(tx.id, e.target.value, "CONFIRM");
+                          }
+                        }}
+                        defaultValue=""
+                        className="bg-gray-50 border border-gray-100 text-xs font-bold rounded-xl px-3 py-2.5 outline-none cursor-pointer"
                       >
-                        Ignorieren
+                         <option value="" disabled>Rechnung zuweisen...</option>
+                         {openInvoices.map(inv => (
+                            <option key={inv.id} value={inv.id}>
+                               {inv.id} - {inv.customerName} ({formatCurrency(inv.amountGross)})
+                            </option>
+                         ))}
+                      </select>
+                      <button 
+                        onClick={() => handleManualAction(tx.id, '', "IGNORE")}
+                        className="px-3 py-2.5 border border-red-100 hover:bg-red-50 text-red-500 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all"
+                      >
+                         Verwerfen
                       </button>
-                    </div>
-                  )}
+                   </div>
                 </div>
-              </div>
-            ))}
+              ))}
+            </div>
+          ) : (
+            <div className="bg-white rounded-3xl border border-gray-100 p-16 text-center space-y-3 shadow-sm">
+               <Check className="h-10 w-10 text-emerald-500 mx-auto bg-emerald-50 rounded-full p-2" />
+               <h4 className="text-sm font-bold text-gray-900">Keine nicht-zugeordneten Umsätze</h4>
+               <p className="text-xs text-gray-400 max-w-xs mx-auto leading-relaxed">Alle Zahlungseingänge konnten erfolgreich mit Rechnungen verknüpft werden.</p>
+            </div>
+          )}
+        </div>
+      )}
 
-            {transactions.filter(t => t.status === "PENDING").length === 0 && (
-              <div className="bg-white rounded-2xl border border-gray-100 p-12 text-center space-y-3 shadow-sm">
-                <div className="h-10 w-10 bg-emerald-50 rounded-full flex items-center justify-center text-emerald-600 mx-auto">
-                  <CheckCircle2 className="h-5 w-5" />
-                </div>
-                <h4 className="text-sm font-bold text-gray-900">Alles abgeglichen!</h4>
-                <p className="text-xs text-gray-400 max-w-xs mx-auto leading-relaxed">
-                  Alle Transaktionen aus dieser Bankdatei wurden erfolgreich abgeglichen, verbucht oder verworfen.
-                </p>
-                <button 
-                  onClick={resetAll}
-                  className="mt-4 px-4 py-2 bg-black text-white rounded-xl text-[9px] font-black uppercase tracking-widest"
-                >
-                  Neue CSV einlesen
-                </button>
-              </div>
-            )}
+      {/* VIEW: IMPORT HISTORY */}
+      {activeSubView === "HISTORY" && (
+        <div className="space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 py-2 px-1">
+            <div>
+               <h4 className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Alle importierten Transaktionen ({historyList.length})</h4>
+            </div>
+            
+            {/* Filter Panel inside History */}
+            <div className="flex flex-wrap items-center gap-3">
+               <div className="relative max-w-xs">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
+                  <input 
+                    type="text"
+                    placeholder="Suche..."
+                    value={searchHistoryTerm}
+                    onChange={(e) => setSearchHistoryTerm(e.target.value)}
+                    className="pl-9 pr-4 py-2 bg-white border border-gray-100 rounded-xl text-xs font-bold outline-none focus:ring-1 focus:ring-black shadow-sm"
+                  />
+               </div>
+               <select
+                 value={filterHistoryStatus}
+                 onChange={(e) => setFilterHistoryStatus(e.target.value)}
+                 className="bg-white border border-gray-100 text-xs font-bold rounded-xl px-3 py-2 outline-none shadow-sm cursor-pointer"
+               >
+                  <option value="ALL">Alle Stati</option>
+                  <option value="Automatisch bestätigt">Bestätigt</option>
+                  <option value="Manuelle Prüfung">Manuelle Prüfung</option>
+                  <option value="Vorschlag">Vorschlag</option>
+                  <option value="Mehrere mögliche Treffer">Mehrere Treffer</option>
+                  <option value="Nicht zugeordnet">Nicht zugeordnet</option>
+                  <option value="Ignoriert">Ignoriert</option>
+               </select>
+            </div>
           </div>
+
+          {historyList.length > 0 ? (
+            <div className="overflow-x-auto border border-gray-100 rounded-3xl overflow-hidden bg-white shadow-sm">
+               <table className="w-full text-left text-xs">
+                  <thead>
+                     <tr className="bg-gray-50/50 border-b border-gray-100">
+                        <th className="px-5 py-3.5 font-bold text-gray-400 uppercase tracking-wider">Datum</th>
+                        <th className="px-5 py-3.5 font-bold text-gray-400 uppercase tracking-wider">Auftraggeber</th>
+                        <th className="px-5 py-3.5 font-bold text-gray-400 uppercase tracking-wider">Buchungstext / Zweck</th>
+                        <th className="px-5 py-3.5 font-bold text-gray-400 uppercase tracking-wider">Abgleich Status</th>
+                        <th className="px-5 py-3.5 font-bold text-gray-400 uppercase tracking-wider text-right">Betrag</th>
+                     </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-50 font-medium text-gray-700">
+                     {historyList.map((tx) => (
+                        <tr key={tx.id} className="hover:bg-gray-50/30 transition-colors">
+                           <td className="px-5 py-4 text-gray-400 font-bold">{tx.bookingDate}</td>
+                           <td className="px-5 py-4 font-bold text-gray-900">{tx.partnerName}</td>
+                           <td className="px-5 py-4 text-[10px] leading-relaxed max-w-xs truncate" title={tx.purpose}>
+                              <p className="font-bold text-gray-800">{tx.bookingText || "-"}</p>
+                              <p className="text-gray-400 mt-0.5 font-medium">{tx.purpose || "-"}</p>
+                           </td>
+                           <td className="px-5 py-4">
+                              <span className={`inline-flex px-2 py-0.5 rounded text-[8px] font-black uppercase tracking-widest border ${getStatusPillColor(tx.matchStatus)}`}>
+                                 {tx.matchStatus}
+                              </span>
+                           </td>
+                           <td className={`px-5 py-4 text-right font-extrabold ${tx.amount > 0 ? 'text-emerald-600' : 'text-red-500'}`}>
+                              {tx.amount > 0 ? `+ ${formatCurrency(tx.amount)}` : formatCurrency(tx.amount)}
+                           </td>
+                        </tr>
+                     ))}
+                  </tbody>
+               </table>
+            </div>
+          ) : (
+            <div className="bg-white rounded-3xl border border-gray-100 p-16 text-center space-y-3 shadow-sm">
+               <AlertCircle className="h-10 w-10 text-gray-200 mx-auto" />
+               <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Keine Transaktionen gefunden.</p>
+            </div>
+          )}
         </div>
       )}
     </div>

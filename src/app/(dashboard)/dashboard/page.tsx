@@ -4,7 +4,7 @@ import { useMemo, useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAuthStore } from "@/store/auth-store";
-import { useDataStore, AttendanceLog } from "@/store/data-store";
+import { useDataStore, AttendanceLog, Invoice } from "@/store/data-store";
 import { 
   Play, 
   Square, 
@@ -25,6 +25,7 @@ import {
   Check
 } from "lucide-react";
 import { toast } from "sonner";
+import { FilterBar } from "@/components/FilterBar";
 
 function MyCalendarTasks() {
   const { user } = useAuthStore();
@@ -300,19 +301,31 @@ export default function DashboardPage() {
       }
     };
 
-    const matchesStatus = (status: string) => {
+    const matchesStatus = (inv: Invoice) => {
+      const status = inv.status;
       if (statusFilter === "ALL") return true;
       if (statusFilter === "OFFEN") return status === "OFFEN";
       if (statusFilter === "BEZAHLT") return status.startsWith("BEZAHLT");
       if (statusFilter === "ENTWURF") return status === "ENTWURF";
       if (statusFilter === "OVERDUE") return status === "OVERDUE";
-      if (statusFilter === "BAR") return status === "BEZAHLT_BAR";
-      if (statusFilter === "BANK") return status === "BEZAHLT_BANK";
+      if (statusFilter === "BAR") {
+        return status === "BEZAHLT_BAR" || 
+          (status.startsWith("BEZAHLT") && inv.paymentMethod === "Cash");
+      }
+      if (statusFilter === "BANK") {
+        return status === "BEZAHLT_BANK" || 
+          (status.startsWith("BEZAHLT") && (
+            inv.paymentMethod === "Bank transfer" || 
+            inv.paymentMethod === "Card" || 
+            inv.paymentMethod === "Stripe" || 
+            inv.paymentMethod === "PayPal"
+          ));
+      }
       return true;
     };
 
     const baseFiltered = invoices.filter(inv => {
-      return isInRange(inv.date) && matchesStatus(inv.status);
+      return isInRange(inv.date) && matchesStatus(inv);
     });
 
     let netSum = 0;
@@ -693,59 +706,18 @@ export default function DashboardPage() {
               </div>
               
               {/* Filters Panel */}
-              <div className="flex flex-wrap items-center gap-4">
-                 {/* Zeit Filter */}
-                 <div className="flex flex-col gap-1">
-                    <label className="text-[8px] font-bold text-gray-400 uppercase tracking-wider">Zeitraum</label>
-                    <select 
-                      value={timeFilter} 
-                      onChange={(e) => setTimeFilter(e.target.value as any)}
-                      className="bg-gray-50 border border-gray-100 text-xs font-bold rounded-xl px-3 py-2 outline-none focus:ring-1 focus:ring-black cursor-pointer"
-                    >
-                       <option value="ALL">Gesamter Zeitraum</option>
-                       <option value="TODAY">Heute</option>
-                       <option value="THIS_WEEK">Diese Woche</option>
-                       <option value="THIS_MONTH">Dieser Monat</option>
-                       <option value="THIS_YEAR">Dieses Jahr</option>
-                       <option value="CUSTOM">Benutzerdefiniert</option>
-                    </select>
-                 </div>
-
-                 {/* Kategorie Filter */}
-                 <div className="flex flex-col gap-1">
-                    <label className="text-[8px] font-bold text-gray-400 uppercase tracking-wider">Kategorie</label>
-                    <select 
-                      value={categoryFilter} 
-                      onChange={(e) => setCategoryFilter(e.target.value)}
-                      className="bg-gray-50 border border-gray-100 text-xs font-bold rounded-xl px-3 py-2 outline-none focus:ring-1 focus:ring-black cursor-pointer"
-                    >
-                       <option value="ALL">Alle Kategorien</option>
-                       <option value="Grafik/Druck">Grafik/Druck</option>
-                       <option value="Web Design/SEO">Web Design/SEO</option>
-                       <option value="Online Marketing">Online Marketing</option>
-                       <option value="Foto/Video">Foto/Video</option>
-                       <option value="Medya Avusturya">Medya Avusturya</option>
-                    </select>
-                 </div>
-
-                 {/* Status Filter */}
-                 <div className="flex flex-col gap-1">
-                    <label className="text-[8px] font-bold text-gray-400 uppercase tracking-wider">Status</label>
-                    <select 
-                      value={statusFilter} 
-                      onChange={(e) => setStatusFilter(e.target.value)}
-                      className="bg-gray-50 border border-gray-100 text-xs font-bold rounded-xl px-3 py-2 outline-none focus:ring-1 focus:ring-black cursor-pointer"
-                    >
-                       <option value="ALL">Alle Stati</option>
-                       <option value="OFFEN">Offen</option>
-                       <option value="BEZAHLT">Bezahlt (Alle)</option>
-                       <option value="ENTWURF">Entwurf</option>
-                       <option value="OVERDUE">Überfällig</option>
-                       <option value="BAR">Bar</option>
-                       <option value="BANK">Bank</option>
-                    </select>
-                 </div>
-              </div>
+              <FilterBar
+                timeFilter={timeFilter}
+                setTimeFilter={setTimeFilter}
+                customStartDate={customStartDate}
+                setCustomStartDate={setCustomStartDate}
+                customEndDate={customEndDate}
+                setCustomEndDate={setCustomEndDate}
+                categoryFilter={categoryFilter}
+                setCategoryFilter={setCategoryFilter}
+                statusFilter={statusFilter}
+                setStatusFilter={setStatusFilter}
+              />
            </div>
 
            {/* Custom Date Range Picker */}

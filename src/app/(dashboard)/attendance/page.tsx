@@ -24,7 +24,7 @@ import {
   Briefcase,
   Save,
   Trash2,
-  Edit2,
+  Edit,
   ExternalLink,
   CheckSquare,
   Square as SquareIcon,
@@ -352,7 +352,7 @@ export default function AttendancePage() {
                               onClick={() => handleEditClick(log)}
                               className="w-full px-5 py-3 text-left hover:bg-gray-50 flex items-center gap-3 group transition-all"
                              >
-                                <Edit2 className="h-4 w-4 text-gray-400 group-hover:text-black" />
+                                <Edit className="h-4 w-4 text-gray-400 group-hover:text-black" />
                                 <span className="text-xs font-bold text-gray-600 group-hover:text-black">Bearbeiten & Zuweisen</span>
                              </button>
                              <button 

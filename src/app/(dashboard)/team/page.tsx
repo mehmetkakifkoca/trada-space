@@ -10,7 +10,7 @@ import {
   X,
   Save,
   Lock,
-  Edit2,
+  Edit,
   Trash2,
   UserCircle,
   Clock,
@@ -348,7 +348,7 @@ export default function TeamPage() {
                   onClick={() => handleOpenModal(member)}
                   className="px-4 py-2 bg-gray-50 hover:bg-black hover:text-white rounded-xl text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-1.5 border border-gray-100"
                 >
-                  <Edit2 className="h-3 w-3" /> Bearbeiten
+                  <Edit className="h-3 w-3" /> Bearbeiten
                 </button>
                 <button 
                   onClick={() => handleDelete(member.id)}
