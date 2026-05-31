@@ -74,6 +74,7 @@ export default function InvoicesDashboard() {
   const [statusFilter, setStatusFilter] = useState<InvoiceStatus | "ALL">("ALL");
   const [sortConfig, setSortConfig] = useState<{ key: keyof Invoice; direction: 'asc' | 'desc' }>({ key: 'date', direction: 'desc' });
   const [activeMenu, setActiveMenu] = useState<string | null>(null);
+  const [menuPosition, setMenuPosition] = useState<{ top: number; left: number } | null>(null);
   const [isPartialModalOpen, setIsPartialModalOpen] = useState(false);
   const [partialInvoiceData, setPartialInvoiceData] = useState<{
     originalInvoice: Invoice | null;
@@ -88,6 +89,10 @@ export default function InvoicesDashboard() {
     const overdue = invoices.filter(i => i.status === "OVERDUE").reduce((acc, inv) => acc + (inv.amountGross || 0), 0);
     return { total, open, overdue };
   }, [invoices]);
+
+  const activeInvoice = useMemo(() => {
+    return invoices.find(i => i.id === activeMenu) || null;
+  }, [invoices, activeMenu]);
 
   // Filtering & Sorting (Alle Rechnungen)
   const filteredInvoices = useMemo(() => {
@@ -354,52 +359,24 @@ export default function InvoicesDashboard() {
                         </button>
                         <div className="relative">
                           <button 
-                            onClick={() => setActiveMenu(activeMenu === inv.id ? null : inv.id)}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (activeMenu === inv.id) {
+                                setActiveMenu(null);
+                                setMenuPosition(null);
+                              } else {
+                                const rect = e.currentTarget.getBoundingClientRect();
+                                setActiveMenu(inv.id);
+                                setMenuPosition({
+                                  top: rect.bottom + window.scrollY + 4,
+                                  left: rect.right + window.scrollX - 176
+                                });
+                              }
+                            }}
                             className="p-1 bg-gray-50 rounded text-gray-400 hover:text-black hover:bg-gray-100 transition-all border border-gray-100"
                           >
                             <MoreHorizontal className="h-3.5 w-3.5" />
                           </button>
-                          
-                          {activeMenu === inv.id && (
-                            <>
-                              <div className="fixed inset-0 z-10" onClick={() => setActiveMenu(null)} />
-                              <div className="absolute right-0 mt-1 w-44 bg-white rounded-xl shadow-xl border border-gray-100 z-20 py-1.5 animate-in fade-in duration-100">
-                                <button onClick={() => { handleDuplizieren(inv); setActiveMenu(null); }} className="w-full flex items-center gap-2 px-3 py-1.5 text-[11px] font-bold text-gray-600 hover:bg-gray-50 transition-colors">
-                                  <Copy className="h-3.5 w-3.5" /> Duplizieren
-                                </button>
-                                <button onClick={() => { router.push(`/accounting/invoices/${inv.id}?print=true`); setActiveMenu(null); }} className="w-full flex items-center gap-2 px-3 py-1.5 text-[11px] font-bold text-gray-600 hover:bg-gray-50 transition-colors">
-                                  <Printer className="h-3.5 w-3.5" /> Drucken / PDF
-                                </button>
-                                <button onClick={() => { toast.info("Email Modal..."); setActiveMenu(null); }} className="w-full flex items-center gap-2 px-3 py-1.5 text-[11px] font-bold text-gray-600 hover:bg-gray-50 transition-colors">
-                                  <Mail className="h-3.5 w-3.5" /> E-Mail senden
-                                </button>
-                                <div className="h-px bg-gray-50 my-1" />
-                                <p className="px-3 py-0.5 text-[8px] font-black text-gray-300 uppercase tracking-widest">Status ändern</p>
-                                {Object.entries(statusConfig).map(([status, cfg]) => (
-                                  <button 
-                                    key={status}
-                                    onClick={() => { updateInvoice(inv.id, { status: status as InvoiceStatus }); setActiveMenu(null); toast.success(`Status auf ${cfg.label} geändert`); }}
-                                    className={`w-full flex items-center gap-2 px-3 py-1 text-[11px] font-bold hover:bg-gray-50 transition-colors ${inv.status === status ? cfg.color : 'text-gray-600'}`}
-                                  >
-                                    <div className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: 'currentColor' }} />
-                                    {cfg.label}
-                                  </button>
-                                ))}
-
-                                <div className="h-px bg-gray-50 my-1" />
-                                <button onClick={() => { setPartialInvoiceData({ originalInvoice: inv, mode: 'PERCENTAGE', value: 50 }); setIsPartialModalOpen(true); setActiveMenu(null); }} className="w-full flex items-center gap-2 px-3 py-1.5 text-[11px] font-bold text-blue-600 hover:bg-blue-50 transition-colors">
-                                  <ExternalLink className="h-3.5 w-3.5" /> Teilrechnung
-                                </button>
-                                
-                                <button onClick={() => { if(confirm("Archivieren this invoice?")) { /* Logic here */ } setActiveMenu(null); }} className="w-full flex items-center gap-2 px-3 py-1.5 text-[11px] font-bold text-gray-400 hover:bg-gray-50 transition-colors">
-                                  <Archive className="h-3.5 w-3.5" /> Archivieren
-                                </button>
-                                <button onClick={() => { if(confirm("Löschen this invoice?")) deleteInvoice(inv.id); setActiveMenu(null); }} className="w-full flex items-center gap-2 px-3 py-1.5 text-[11px] font-bold text-red-500 hover:bg-red-50 transition-colors">
-                                  <Trash2 className="h-3.5 w-3.5" /> Löschen
-                                </button>
-                              </div>
-                            </>
-                          )}
                         </div>
                       </div>
                     </td>
@@ -552,6 +529,54 @@ export default function InvoicesDashboard() {
             </div>
           </div>
         </div>
+      )}
+
+      {activeMenu && activeInvoice && menuPosition && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => { setActiveMenu(null); setMenuPosition(null); }} />
+          <div 
+            style={{ 
+              position: 'absolute',
+              top: `${menuPosition.top}px`,
+              left: `${menuPosition.left}px`,
+            }}
+            className="w-44 bg-white rounded-xl shadow-xl border border-gray-100 z-50 py-1.5 animate-in fade-in duration-100"
+          >
+            <button onClick={() => { handleDuplizieren(activeInvoice); setActiveMenu(null); setMenuPosition(null); }} className="w-full flex items-center gap-2 px-3 py-1.5 text-[11px] font-bold text-gray-600 hover:bg-gray-50 transition-colors">
+              <Copy className="h-3.5 w-3.5" /> Duplizieren
+            </button>
+            <button onClick={() => { router.push(`/accounting/invoices/${activeInvoice.id}?print=true`); setActiveMenu(null); setMenuPosition(null); }} className="w-full flex items-center gap-2 px-3 py-1.5 text-[11px] font-bold text-gray-600 hover:bg-gray-50 transition-colors">
+              <Printer className="h-3.5 w-3.5" /> Drucken / PDF
+            </button>
+            <button onClick={() => { toast.info("Email Modal..."); setActiveMenu(null); setMenuPosition(null); }} className="w-full flex items-center gap-2 px-3 py-1.5 text-[11px] font-bold text-gray-600 hover:bg-gray-50 transition-colors">
+              <Mail className="h-3.5 w-3.5" /> E-Mail senden
+            </button>
+            <div className="h-px bg-gray-50 my-1" />
+            <p className="px-3 py-0.5 text-[8px] font-black text-gray-300 uppercase tracking-widest">Status ändern</p>
+            {Object.entries(statusConfig).map(([status, cfg]) => (
+              <button 
+                key={status}
+                onClick={() => { updateInvoice(activeInvoice.id, { status: status as InvoiceStatus }); setActiveMenu(null); setMenuPosition(null); toast.success(`Status auf ${cfg.label} geändert`); }}
+                className={`w-full flex items-center gap-2 px-3 py-1 text-[11px] font-bold hover:bg-gray-50 transition-colors ${activeInvoice.status === status ? cfg.color : 'text-gray-600'}`}
+              >
+                <div className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: 'currentColor' }} />
+                {cfg.label}
+              </button>
+            ))}
+
+            <div className="h-px bg-gray-50 my-1" />
+            <button onClick={() => { setPartialInvoiceData({ originalInvoice: activeInvoice, mode: 'PERCENTAGE', value: 50 }); setIsPartialModalOpen(true); setActiveMenu(null); setMenuPosition(null); }} className="w-full flex items-center gap-2 px-3 py-1.5 text-[11px] font-bold text-blue-600 hover:bg-blue-50 transition-colors">
+              <ExternalLink className="h-3.5 w-3.5" /> Teilrechnung
+            </button>
+            
+            <button onClick={() => { if(confirm("Archivieren this invoice?")) { /* Logic here */ } setActiveMenu(null); setMenuPosition(null); }} className="w-full flex items-center gap-2 px-3 py-1.5 text-[11px] font-bold text-gray-400 hover:bg-gray-50 transition-colors">
+              <Archive className="h-3.5 w-3.5" /> Archivieren
+            </button>
+            <button onClick={() => { if(confirm("Löschen this invoice?")) deleteInvoice(activeInvoice.id); setActiveMenu(null); setMenuPosition(null); }} className="w-full flex items-center gap-2 px-3 py-1.5 text-[11px] font-bold text-red-500 hover:bg-red-50 transition-colors">
+              <Trash2 className="h-3.5 w-3.5" /> Löschen
+            </button>
+          </div>
+        </>
       )}
     </div>
   );
