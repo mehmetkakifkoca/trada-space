@@ -116,6 +116,7 @@ export default function InvoiceEditorPage() {
   // Dirty State Exit Warnings
   const [isDirty, setIsDirty] = useState(false);
   const [isInitialLoad, setIsInitialLoad] = useState(true);
+  const shouldIgnoreDirtyRef = useRef(true);
 
   // Hydrate from existing invoice
   useEffect(() => {
@@ -126,6 +127,10 @@ export default function InvoiceEditorPage() {
         if (existing.pdfTemplate) {
           setSelectedTemplate(existing.pdfTemplate as any);
         }
+        setTimeout(() => {
+          setIsDirty(false);
+          shouldIgnoreDirtyRef.current = false;
+        }, 100);
       }
     }
   }, [id, isNew, invoices]);
@@ -144,19 +149,22 @@ export default function InvoiceEditorPage() {
         language: invoiceSettings.defaultLanguage,
         footerText: invoiceSettings.defaultFooter
       }));
+      setTimeout(() => {
+        setIsDirty(false);
+        shouldIgnoreDirtyRef.current = false;
+      }, 100);
     }
   }, [isNew, invoiceSettings]);
 
   // Track Unsaved Changes
   useEffect(() => {
-    if (isInitialLoad) {
-      setIsInitialLoad(false);
+    if (shouldIgnoreDirtyRef.current) {
       return;
     }
     setIsDirty(true);
   }, [invoice]);
 
-  // Browser Exit Warnings
+  // Browser Exit Warnings (Tab closure / page reload)
   useEffect(() => {
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
       if (isDirty) {
@@ -168,6 +176,43 @@ export default function InvoiceEditorPage() {
     window.addEventListener("beforeunload", handleBeforeUnload);
     return () => window.removeEventListener("beforeunload", handleBeforeUnload);
   }, [isDirty]);
+
+  // Exit Prompt helper with saving options
+  const handleExitPrompt = (targetUrl: string) => {
+    const confirmExit = confirm(
+      "Sie haben ungespeicherte Änderungen.\n\nMöchten Sie diese Änderungen jetzt als ENTWURF speichern?\n\n[OK] = Als Entwurf speichern & verlassen\n[Abbrechen] = Änderungen verwerfen & verlassen"
+    );
+    if (confirmExit) {
+      saveAsDraftAndRedirect(targetUrl);
+    } else {
+      setIsDirty(false);
+      router.push(targetUrl);
+    }
+  };
+
+  // Client-side Navigation Guard (Sidebar, top links, etc.)
+  useEffect(() => {
+    if (!isDirty) return;
+
+    const handleAnchorClick = (e: MouseEvent) => {
+      let target = e.target as HTMLElement;
+      while (target && target.tagName !== "A") {
+        target = target.parentElement as HTMLElement;
+      }
+
+      if (target && target.tagName === "A") {
+        const href = target.getAttribute("href");
+        if (href && !href.startsWith("#") && target.getAttribute("target") !== "_blank") {
+          e.preventDefault();
+          e.stopPropagation();
+          handleExitPrompt(href);
+        }
+      }
+    };
+
+    document.addEventListener("click", handleAnchorClick, true);
+    return () => document.removeEventListener("click", handleAnchorClick, true);
+  }, [isDirty, invoice, selectedTemplate]);
 
   // Print on direct flag
   useEffect(() => {
@@ -298,13 +343,45 @@ export default function InvoiceEditorPage() {
     toast.success("Als fertige Dienstleistungsvorlage gespeichert!");
   };
 
+  const saveAsDraftAndRedirect = (redirectTo: string) => {
+    const draftInvoice = {
+      ...invoice,
+      id: invoice.id || `RE-DRAFT-${Date.now()}`,
+      customerId: invoice.customerId || "c_draft",
+      customerName: invoice.customerName || "Entwurf Kunde",
+      email: invoice.email || "draft@trada.space",
+      date: invoice.date || new Date().toISOString().split('T')[0],
+      dueDate: invoice.dueDate || new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+      paymentTerms: invoice.paymentTerms || "14 Tage netto",
+      positions: invoice.positions || [],
+      amountNet: totals.net,
+      amountVat: totals.vat,
+      amountGross: totals.gross,
+      status: "ENTWURF" as const,
+      pdfTemplate: selectedTemplate
+    } as Invoice;
+
+    if (isNew) {
+      addInvoice(draftInvoice);
+    } else {
+      updateInvoice(draftInvoice.id, draftInvoice);
+    }
+    
+    setIsDirty(false); // Reset dirty state
+    toast.success("Änderungen als Entwurf gespeichert!");
+    router.push(redirectTo);
+  };
+
   // Unsaved Prompt on Back
   const handleBack = () => {
     if (isDirty) {
-      const confirmExit = confirm("Sie haben ungespeicherte Änderungen.\n\nMöchten Sie diese Änderungen jetzt als ENTWURF speichern?\n\n[OK] = Speichern\n[Abbrechen] = Änderungen verwerfen");
+      const confirmExit = confirm(
+        "Sie haben ungespeicherte Änderungen.\n\nMöchten Sie diese Änderungen jetzt als ENTWURF speichern?\n\n[OK] = Als Entwurf speichern & verlassen\n[Abbrechen] = Änderungen verwerfen & verlassen"
+      );
       if (confirmExit) {
-        handleSave();
+        saveAsDraftAndRedirect("/accounting/invoices");
       } else {
+        setIsDirty(false);
         router.push("/accounting/invoices");
       }
     } else {
@@ -334,13 +411,13 @@ export default function InvoiceEditorPage() {
     } as Invoice;
 
     if (isNew) {
-      addInvoice({ ...finalInvoice, status: "OFFEN" });
+      addInvoice({ ...finalInvoice, status: "ENTWURF" });
     } else {
       updateInvoice(invoice.id!, finalInvoice);
     }
     
     setIsDirty(false); // Clear dirty state
-    toast.success(isNew ? "Rechnung erstellt" : "Rechnung aktualisiert");
+    toast.success(isNew ? "Rechnung als Entwurf gespeichert" : "Rechnung aktualisiert");
     router.push("/accounting/invoices");
   };
 
