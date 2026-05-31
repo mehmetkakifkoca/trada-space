@@ -69,6 +69,12 @@ export interface Customer {
   };
   payments?: PaymentStatus[];
   reports?: MonthlyReport[];
+  
+  company?: string;
+  contactPerson?: string;
+  vatId?: string;
+  paymentTerms?: string;
+  notes?: string;
 }
 
 export type InvoiceType = 

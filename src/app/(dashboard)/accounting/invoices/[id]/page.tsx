@@ -471,6 +471,7 @@ export default function InvoiceEditorPage() {
   // Reusable PDF content layout supporting multiple designs
   const InvoicePdfContent = () => {
     const docTitle = getDocumentTitle(invoice.type || "");
+    const selectedCustomerObj = customers.find(c => c.id === invoice.customerId);
     
     // Modern Minimalist Template
     if (selectedTemplate === "modern") {
@@ -490,10 +491,24 @@ export default function InvoiceEditorPage() {
             </div>
 
             <div className="flex justify-between mb-12">
-              <div className="max-w-[240px]">
+              <div className="max-w-[240px] space-y-0.5">
                 <p className="text-[9px] font-black text-gray-300 uppercase tracking-widest mb-1.5 border-b border-gray-100 pb-0.5">Empfänger</p>
-                <p className="text-xs font-bold text-gray-900">{invoice.customerName}</p>
-                <p className="text-[10px] text-gray-500 mt-0.5">{invoice.email}</p>
+                <p className="text-xs font-bold text-gray-900">{selectedCustomerObj?.company || invoice.customerName}</p>
+                {selectedCustomerObj?.contactPerson && (
+                  <p className="text-[10px] text-gray-600 font-medium">z.H. {selectedCustomerObj.contactPerson}</p>
+                )}
+                {selectedCustomerObj?.address ? (
+                  <p className="text-[10px] text-gray-500 whitespace-pre-line leading-relaxed">{selectedCustomerObj.address}</p>
+                ) : (
+                  <p className="text-[10px] text-gray-500">{selectedCustomerObj?.name || invoice.customerName}</p>
+                )}
+                {selectedCustomerObj?.vatId && (
+                  <p className="text-[9px] text-gray-400 font-semibold pt-0.5">UID: {selectedCustomerObj.vatId}</p>
+                )}
+                <div className="text-[9px] text-gray-400 pt-1">
+                  {selectedCustomerObj?.phone && <p>Tel: {selectedCustomerObj.phone}</p>}
+                  <p>E-Mail: {selectedCustomerObj?.email || invoice.email}</p>
+                </div>
               </div>
               <div className="flex gap-8">
                 <div className="text-right">
@@ -607,10 +622,24 @@ export default function InvoiceEditorPage() {
             </div>
 
             <div className="grid grid-cols-2 gap-8 mb-10">
-              <div className="bg-indigo-50/15 border border-indigo-50 rounded-xl p-4">
-                <p className="text-[8px] font-black text-indigo-400 uppercase tracking-widest mb-1.5">Empfängerdaten</p>
-                <p className="text-xs font-bold text-gray-900">{invoice.customerName}</p>
-                <p className="text-[10px] text-gray-500 mt-1">{invoice.email}</p>
+              <div className="bg-indigo-50/15 border border-indigo-50 rounded-xl p-4 space-y-1">
+                <p className="text-[8px] font-black text-indigo-400 uppercase tracking-widest mb-1">Empfängerdaten</p>
+                <p className="text-xs font-bold text-gray-900">{selectedCustomerObj?.company || invoice.customerName}</p>
+                {selectedCustomerObj?.contactPerson && (
+                  <p className="text-[10px] text-gray-700 font-medium">z.H. {selectedCustomerObj.contactPerson}</p>
+                )}
+                {selectedCustomerObj?.address ? (
+                  <p className="text-[10px] text-gray-500 whitespace-pre-line leading-relaxed">{selectedCustomerObj.address}</p>
+                ) : (
+                  <p className="text-[10px] text-gray-500">{selectedCustomerObj?.name || invoice.customerName}</p>
+                )}
+                {selectedCustomerObj?.vatId && (
+                  <p className="text-[9px] text-indigo-900 font-semibold pt-0.5">UID: {selectedCustomerObj.vatId}</p>
+                )}
+                <div className="text-[9px] text-gray-400 pt-0.5">
+                  {selectedCustomerObj?.phone && <p>Tel: {selectedCustomerObj.phone}</p>}
+                  <p>E-Mail: {selectedCustomerObj?.email || invoice.email}</p>
+                </div>
               </div>
               <div className="flex flex-col justify-center space-y-1.5 text-right pr-2">
                 <div className="flex justify-end gap-4 text-[10px]">
@@ -720,10 +749,24 @@ export default function InvoiceEditorPage() {
                   <p className="font-black text-slate-500 uppercase tracking-widest mb-0.5">Zahlungsfrist</p>
                   <p className="font-bold text-white">{invoice.dueDate}</p>
                 </div>
-                <div className="pt-4 border-t border-slate-800 mt-4">
+                <div className="pt-4 border-t border-slate-800 mt-4 space-y-1">
                   <p className="font-black text-slate-500 uppercase tracking-widest mb-1">Rechnungsempfänger</p>
-                  <p className="text-xs font-black text-white">{invoice.customerName}</p>
-                  <p className="text-[9px] text-slate-400 mt-0.5 leading-snug">{invoice.email}</p>
+                  <p className="text-xs font-black text-white">{selectedCustomerObj?.company || invoice.customerName}</p>
+                  {selectedCustomerObj?.contactPerson && (
+                    <p className="text-[10px] text-slate-300 font-medium">z.H. {selectedCustomerObj.contactPerson}</p>
+                  )}
+                  {selectedCustomerObj?.address ? (
+                    <p className="text-[10px] text-slate-400 whitespace-pre-line leading-relaxed">{selectedCustomerObj.address}</p>
+                  ) : (
+                    <p className="text-[10px] text-slate-400">{selectedCustomerObj?.name || invoice.customerName}</p>
+                  )}
+                  {selectedCustomerObj?.vatId && (
+                    <p className="text-[9px] text-slate-400 font-semibold pt-0.5">UID: {selectedCustomerObj.vatId}</p>
+                  )}
+                  <div className="text-[9px] text-slate-400 pt-1">
+                    {selectedCustomerObj?.phone && <p>Tel: {selectedCustomerObj.phone}</p>}
+                    <p>E-Mail: {selectedCustomerObj?.email || invoice.email}</p>
+                  </div>
                 </div>
               </div>
             </div>
@@ -1155,7 +1198,15 @@ export default function InvoiceEditorPage() {
                         value={invoice.customerId}
                         onChange={(e) => {
                           const c = customers.find(cust => cust.id === e.target.value);
-                          if (c) setInvoice({ ...invoice, customerId: c.id, customerName: c.name, email: c.email });
+                          if (c) {
+                            setInvoice(prev => ({ 
+                              ...prev, 
+                              customerId: c.id, 
+                              customerName: c.name, 
+                              email: c.email,
+                              paymentTerms: c.paymentTerms || prev.paymentTerms || "14 Tage netto"
+                            }));
+                          }
                         }}
                       >
                         <option value="">Kunde auswählen...</option>

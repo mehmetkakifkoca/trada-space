@@ -53,6 +53,13 @@ export default function CRMPage() {
       setFormData({
         name: "",
         email: "",
+        company: "",
+        contactPerson: "",
+        address: "",
+        vatId: "",
+        phone: "",
+        paymentTerms: "14 Tage netto",
+        notes: "",
         status: "Active",
         color: "#" + Math.floor(Math.random()*16777215).toString(16)
       });
@@ -195,83 +202,158 @@ export default function CRMPage() {
       {/* Add/Edit Modal */}
       {isModalOpen && (
         <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
-          <div className="bg-white w-full max-w-md rounded-[40px] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
-             <div className="p-8 border-b border-gray-50 flex items-center justify-between">
-                <h2 className="text-2xl font-bold text-gray-900">{editingCustomer ? "Kunde bearbeiten" : "Neuer Kunde"}</h2>
+          <div className="bg-white w-full max-w-2xl rounded-[40px] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+             <div className="p-6 sm:p-8 border-b border-gray-50 flex items-center justify-between">
+                <h2 className="text-xl font-bold text-gray-900">{editingCustomer ? "Kunde bearbeiten" : "Neuer Kunde"}</h2>
                 <button onClick={() => setIsModalOpen(false)} className="h-10 w-10 bg-gray-50 rounded-xl flex items-center justify-center text-gray-400 hover:text-black transition-all">
                    <X className="h-5 w-5" />
                 </button>
              </div>
-             <form onSubmit={handleSubmit} className="p-8 space-y-6">
-                <div className="space-y-2">
-                   <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Kundenname *</label>
-                   <input 
-                    type="text" 
-                    required
-                    className="w-full px-4 py-3 bg-gray-50 rounded-xl text-sm focus:ring-2 focus:ring-black/5 outline-none"
-                    value={formData.name}
-                    onChange={(e) => setFormData({...formData, name: e.target.value})}
-                   />
-                </div>
-                <div className="space-y-2">
-                   <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">E-Mail Adresse</label>
-                   <input 
-                    type="email" 
-                    className="w-full px-4 py-3 bg-gray-50 rounded-xl text-sm focus:ring-2 focus:ring-black/5 outline-none"
-                    value={formData.email}
-                    onChange={(e) => setFormData({...formData, email: e.target.value})}
-                   />
-                </div>
-                 <div className="space-y-2">
-                    <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Telefonnummer</label>
-                    <input 
-                     type="text" 
-                     className="w-full px-4 py-3 bg-gray-50 rounded-xl text-sm focus:ring-2 focus:ring-black/5 outline-none"
-                     placeholder="+49 000 0000000"
-                     value={formData.phone || ""}
-                     onChange={(e) => setFormData({...formData, phone: e.target.value})}
-                    />
-                 </div>
-
-                 <div className="pt-4 space-y-4 border-t border-gray-100">
-                    <label className="text-[10px] font-bold text-black uppercase tracking-widest">Social Media Plan</label>
-                    <div className="grid grid-cols-2 gap-4">
-                       <div className="space-y-2">
-                          <label className="text-[9px] font-bold text-gray-400 uppercase">Monatlicher Preis (€)</label>
-                          <input 
-                            type="number" 
-                            className="w-full px-4 py-2 bg-gray-50 rounded-lg text-sm outline-none"
-                            value={formData.socialPlan?.price || ""}
-                            onChange={(e) => setFormData({
-                              ...formData, 
-                              socialPlan: { ...formData.socialPlan!, price: Number(e.target.value) }
-                            })}
-                          />
-                       </div>
-                       <div className="space-y-2">
-                          <label className="text-[9px] font-bold text-gray-400 uppercase">Wöchentliche Posts</label>
-                          <input 
-                            type="number" 
-                            className="w-full px-4 py-2 bg-gray-50 rounded-lg text-sm outline-none"
-                            value={formData.socialPlan?.weeklyPosts || ""}
-                            onChange={(e) => setFormData({
-                              ...formData, 
-                              socialPlan: { ...formData.socialPlan!, weeklyPosts: Number(e.target.value) }
-                            })}
-                          />
-                       </div>
+             <form onSubmit={handleSubmit} className="p-6 sm:p-8 space-y-6 max-h-[80vh] overflow-y-auto">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {/* Left Column */}
+                  <div className="space-y-4">
+                    <div className="space-y-1.5">
+                       <label className="text-[9px] font-bold text-gray-400 uppercase tracking-widest">Kundenname (Ansprechpartner) *</label>
+                       <input 
+                        type="text" 
+                        required
+                        className="w-full px-3 py-2 bg-gray-50 rounded-xl text-xs outline-none border border-transparent focus:border-black/5 focus:bg-white transition-all font-bold"
+                        value={formData.name}
+                        onChange={(e) => setFormData({...formData, name: e.target.value})}
+                       />
                     </div>
-                 </div>
+                    
+                    <div className="space-y-1.5">
+                       <label className="text-[9px] font-bold text-gray-400 uppercase tracking-widest">Firma (Company)</label>
+                       <input 
+                        type="text" 
+                        className="w-full px-3 py-2 bg-gray-50 rounded-xl text-xs outline-none border border-transparent focus:border-black/5 focus:bg-white transition-all font-bold"
+                        value={formData.company || ""}
+                        onChange={(e) => setFormData({...formData, company: e.target.value})}
+                       />
+                    </div>
 
-                 <div className="pt-4 flex gap-4">
-                    <button type="button" onClick={() => setIsModalOpen(false)} className="flex-1 py-4 bg-gray-50 rounded-2xl text-xs font-bold text-gray-500 hover:bg-gray-100 transition-all">
-                       Abbrechen
-                    </button>
-                    <button type="submit" className="flex-1 py-4 bg-brand-secondary text-white rounded-2xl text-xs font-bold hover:scale-[1.02] shadow-lg shadow-brand-secondary/20 transition-all flex items-center justify-center gap-2">
-                       <Save className="h-4 w-4" />
-                       {editingCustomer ? "Speichern" : "Erstellen"}
-                    </button>
-                 </div>
+                    <div className="space-y-1.5">
+                       <label className="text-[9px] font-bold text-gray-400 uppercase tracking-widest">Ansprechpartner (Details)</label>
+                       <input 
+                        type="text" 
+                        className="w-full px-3 py-2 bg-gray-50 rounded-xl text-xs outline-none border border-transparent focus:border-black/5 focus:bg-white transition-all font-bold"
+                        placeholder="z.B. Sarah Schmidt"
+                        value={formData.contactPerson || ""}
+                        onChange={(e) => setFormData({...formData, contactPerson: e.target.value})}
+                       />
+                    </div>
+
+                    <div className="space-y-1.5">
+                       <label className="text-[9px] font-bold text-gray-400 uppercase tracking-widest">E-Mail Adresse</label>
+                       <input 
+                        type="email" 
+                        className="w-full px-3 py-2 bg-gray-50 rounded-xl text-xs outline-none border border-transparent focus:border-black/5 focus:bg-white transition-all font-bold"
+                        value={formData.email}
+                        onChange={(e) => setFormData({...formData, email: e.target.value})}
+                       />
+                    </div>
+
+                    <div className="space-y-1.5">
+                       <label className="text-[9px] font-bold text-gray-400 uppercase tracking-widest">Telefonnummer</label>
+                       <input 
+                        type="text" 
+                        className="w-full px-3 py-2 bg-gray-50 rounded-xl text-xs outline-none border border-transparent focus:border-black/5 focus:bg-white transition-all font-bold"
+                        placeholder="+43 664 1234567"
+                        value={formData.phone || ""}
+                        onChange={(e) => setFormData({...formData, phone: e.target.value})}
+                       />
+                    </div>
+
+                    <div className="space-y-1.5">
+                       <label className="text-[9px] font-bold text-gray-400 uppercase tracking-widest">UID-Nummer (VAT-ID)</label>
+                       <input 
+                        type="text" 
+                        className="w-full px-3 py-2 bg-gray-50 rounded-xl text-xs outline-none border border-transparent focus:border-black/5 focus:bg-white transition-all font-bold"
+                        placeholder="ATU12345678"
+                        value={formData.vatId || ""}
+                        onChange={(e) => setFormData({...formData, vatId: e.target.value})}
+                       />
+                    </div>
+                  </div>
+
+                  {/* Right Column */}
+                  <div className="space-y-4">
+                    <div className="space-y-1.5">
+                       <label className="text-[9px] font-bold text-gray-400 uppercase tracking-widest">Adresse</label>
+                       <textarea 
+                        rows={3}
+                        className="w-full px-3 py-2 bg-gray-50 rounded-xl text-xs outline-none border border-transparent focus:border-black/5 focus:bg-white transition-all font-medium resize-none"
+                        placeholder="Musterstraße 1, 1010 Wien"
+                        value={formData.address || ""}
+                        onChange={(e) => setFormData({...formData, address: e.target.value})}
+                       />
+                    </div>
+
+                    <div className="space-y-1.5">
+                       <label className="text-[9px] font-bold text-gray-400 uppercase tracking-widest">Zahlungsbedingungen</label>
+                       <input 
+                        type="text" 
+                        className="w-full px-3 py-2 bg-gray-50 rounded-xl text-xs outline-none border border-transparent focus:border-black/5 focus:bg-white transition-all font-bold"
+                        placeholder="z.B. Zahlbar innerhalb von 14 Tagen"
+                        value={formData.paymentTerms || ""}
+                        onChange={(e) => setFormData({...formData, paymentTerms: e.target.value})}
+                       />
+                    </div>
+
+                    <div className="space-y-1.5">
+                       <label className="text-[9px] font-bold text-gray-400 uppercase tracking-widest">Notizen</label>
+                       <textarea 
+                        rows={3}
+                        className="w-full px-3 py-2 bg-gray-50 rounded-xl text-xs outline-none border border-transparent focus:border-black/5 focus:bg-white transition-all font-medium resize-none"
+                        placeholder="Zusätzliche Infos..."
+                        value={formData.notes || ""}
+                        onChange={(e) => setFormData({...formData, notes: e.target.value})}
+                       />
+                    </div>
+
+                    <div className="pt-2 space-y-3">
+                      <label className="text-[10px] font-bold text-black uppercase tracking-widest">Social Media Plan</label>
+                      <div className="grid grid-cols-2 gap-4">
+                         <div className="space-y-1.5">
+                            <label className="text-[8px] font-bold text-gray-400 uppercase">Monatlicher Preis (€)</label>
+                            <input 
+                              type="number" 
+                              className="w-full px-3 py-2 bg-gray-50 rounded-lg text-xs outline-none font-bold"
+                              value={formData.socialPlan?.price || ""}
+                              onChange={(e) => setFormData({
+                                ...formData, 
+                                socialPlan: { ...formData.socialPlan!, price: Number(e.target.value) }
+                              })}
+                            />
+                         </div>
+                         <div className="space-y-1.5">
+                            <label className="text-[8px] font-bold text-gray-400 uppercase">Wöchentliche Posts</label>
+                            <input 
+                              type="number" 
+                              className="w-full px-3 py-2 bg-gray-50 rounded-lg text-xs outline-none font-bold"
+                              value={formData.socialPlan?.weeklyPosts || ""}
+                              onChange={(e) => setFormData({
+                                ...formData, 
+                                socialPlan: { ...formData.socialPlan!, weeklyPosts: Number(e.target.value) }
+                              })}
+                            />
+                         </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="pt-6 flex gap-4 border-t border-gray-100">
+                   <button type="button" onClick={() => setIsModalOpen(false)} className="flex-1 py-3 bg-gray-50 rounded-2xl text-xs font-bold text-gray-500 hover:bg-gray-100 transition-all">
+                      Abbrechen
+                   </button>
+                   <button type="submit" className="flex-1 py-3 bg-brand-secondary text-white rounded-2xl text-xs font-bold hover:scale-[1.02] shadow-lg shadow-brand-secondary/20 transition-all flex items-center justify-center gap-2">
+                      <Save className="h-4 w-4" />
+                      {editingCustomer ? "Speichern" : "Erstellen"}
+                   </button>
+                </div>
              </form>
           </div>
         </div>
@@ -293,7 +375,33 @@ export default function CRMPage() {
                </button>
             </div>
             
-            <div className="p-8 overflow-y-auto space-y-10">
+            <div className="p-8 overflow-y-auto space-y-8">
+               {/* Extended Info Block */}
+               <div className="bg-gray-50/50 border border-gray-100 rounded-3xl p-6 grid grid-cols-1 md:grid-cols-2 gap-6 text-xs">
+                  <div className="space-y-2">
+                    <p className="font-black text-[8px] text-gray-400 uppercase tracking-widest mb-1">Stammdaten</p>
+                    {selectedCustomer.company && <p className="font-semibold text-gray-700">Firma: <span className="font-bold text-gray-900">{selectedCustomer.company}</span></p>}
+                    {selectedCustomer.contactPerson && <p className="font-semibold text-gray-700">Ansprechpartner: <span className="font-bold text-gray-900">{selectedCustomer.contactPerson}</span></p>}
+                    {selectedCustomer.vatId && <p className="font-semibold text-gray-700">UID-Nummer: <span className="font-bold text-gray-900">{selectedCustomer.vatId}</span></p>}
+                    {selectedCustomer.paymentTerms && <p className="font-semibold text-gray-700">Zahlungsbedingungen: <span className="font-bold text-gray-900">{selectedCustomer.paymentTerms}</span></p>}
+                  </div>
+                  <div className="space-y-2">
+                    <p className="font-black text-[8px] text-gray-400 uppercase tracking-widest mb-1">Adresse & Notizen</p>
+                    {selectedCustomer.address ? (
+                      <div className="font-semibold text-gray-700">
+                        <p className="text-[10px] text-gray-400">Adresse:</p>
+                        <p className="font-bold text-gray-900 whitespace-pre-line mt-0.5">{selectedCustomer.address}</p>
+                      </div>
+                    ) : <p className="text-gray-400 italic">Keine Adresse hinterlegt</p>}
+                    {selectedCustomer.notes && (
+                      <div className="mt-2 font-semibold text-gray-700">
+                        <p className="text-[10px] text-gray-400">Notizen:</p>
+                        <p className="font-bold text-gray-900 whitespace-pre-line mt-0.5">{selectedCustomer.notes}</p>
+                      </div>
+                    )}
+                  </div>
+               </div>
+
                {/* Plan Info */}
                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                   <div className="bg-gray-50 p-6 rounded-3xl space-y-1">
