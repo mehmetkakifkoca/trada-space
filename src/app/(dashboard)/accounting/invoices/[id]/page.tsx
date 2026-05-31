@@ -480,8 +480,14 @@ export default function InvoiceEditorPage() {
           <div>
             <div className="flex justify-between items-start mb-14">
               <div>
-                <div className="h-12 w-12 bg-neutral-900 rounded-xl mb-4 flex items-center justify-center text-white font-bold text-sm">TM</div>
-                <p className="font-bold text-gray-900 text-xs">{invoiceSettings.companyName}</p>
+                {invoiceSettings.systemLogo || "/logo.png" ? (
+                  <img src={invoiceSettings.systemLogo || "/logo.png"} alt="Logo" className="h-12 w-auto max-h-12 object-contain mb-4" />
+                ) : (
+                  <>
+                    <div className="h-12 w-12 bg-neutral-900 rounded-xl mb-4 flex items-center justify-center text-white font-bold text-sm">TM</div>
+                    <p className="font-bold text-gray-900 text-xs">{invoiceSettings.companyName}</p>
+                  </>
+                )}
                 <p className="text-[9px] text-gray-400 mt-1 whitespace-pre-line">{invoiceSettings.companyAddress}</p>
               </div>
               <div className="text-right">
@@ -609,10 +615,14 @@ export default function InvoiceEditorPage() {
           <div className="p-8 sm:p-12 pt-10">
             <div className="flex justify-between items-start mb-12">
               <div>
-                <div className="text-xl font-black text-indigo-900 tracking-tight flex items-center gap-1.5 mb-2">
-                  <Bookmark className="h-5 w-5 text-indigo-900" />
-                  {invoiceSettings.companyName}
-                </div>
+                {invoiceSettings.systemLogo || "/logo.png" ? (
+                  <img src={invoiceSettings.systemLogo || "/logo.png"} alt="Logo" className="h-12 w-auto max-h-12 object-contain mb-4" />
+                ) : (
+                  <div className="text-xl font-black text-indigo-900 tracking-tight flex items-center gap-1.5 mb-2">
+                    <Bookmark className="h-5 w-5 text-indigo-900" />
+                    {invoiceSettings.companyName}
+                  </div>
+                )}
                 <p className="text-[9px] text-gray-400 whitespace-pre-line leading-relaxed">{invoiceSettings.companyAddress}</p>
               </div>
               <div className="text-right">
@@ -735,7 +745,11 @@ export default function InvoiceEditorPage() {
           {/* Dark Sidebar Panel */}
           <div className="w-[32%] bg-slate-900 text-white p-6 sm:p-8 flex flex-col justify-between shrink-0 print:hidden">
             <div>
-              <div className="h-10 w-10 bg-white text-slate-950 font-black rounded-xl mb-12 flex items-center justify-center text-sm shadow-lg">TM</div>
+              {invoiceSettings.systemLogo || "/logo.png" ? (
+                <img src={invoiceSettings.systemLogo || "/logo.png"} alt="Logo" className="h-10 w-auto max-h-10 object-contain mb-12 bg-white/90 p-1 rounded-lg" />
+              ) : (
+                <div className="h-10 w-10 bg-white text-slate-950 font-black rounded-xl mb-12 flex items-center justify-center text-sm shadow-lg">TM</div>
+              )}
               
               <h1 className="text-xl font-black tracking-tight text-white mb-1.5 uppercase leading-none">{docTitle}</h1>
               <p className="text-[9px] font-bold text-slate-400 mb-8">Nr. {invoice.id}</p>
@@ -783,7 +797,11 @@ export default function InvoiceEditorPage() {
             <div>
               <div className="flex justify-between items-start mb-12">
                 <div>
-                  <p className="font-bold text-slate-900 text-xs">{invoiceSettings.companyName}</p>
+                  {invoiceSettings.systemLogo || "/logo.png" ? (
+                    <img src={invoiceSettings.systemLogo || "/logo.png"} alt="Logo" className="h-12 w-auto max-h-12 object-contain mb-4" />
+                  ) : (
+                    <p className="font-bold text-slate-900 text-xs">{invoiceSettings.companyName}</p>
+                  )}
                   <p className="text-[9px] text-slate-400 mt-1 whitespace-pre-line leading-relaxed">{invoiceSettings.companyAddress}</p>
                 </div>
                 <div className="text-right hidden print:block">
