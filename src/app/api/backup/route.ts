@@ -76,9 +76,9 @@ export async function POST(request: Request) {
       drive = google.drive({ version: 'v3', auth });
     }
 
-      // Only use the folder ID with service account — it belongs to the SA's drive, not the user's
+      // Save to specific folder if configured
       const folderId = process.env.GOOGLE_DRIVE_FOLDER_ID;
-      if (folderId && !accessToken && !refreshToken) {
+      if (folderId) {
         fileMetadata.parents = [folderId];
       }
 
