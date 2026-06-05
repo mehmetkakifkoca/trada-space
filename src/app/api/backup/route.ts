@@ -35,13 +35,32 @@ export async function POST(request: Request) {
     const redirectUri = `${baseUrl}/api/auth/google/callback`;
 
 
+    let authMethod = "None";
+    let tokenScopes: string[] = [];
+    let tokenEmail = "";
+
     const oauthClientId = process.env.GOOGLE_OAUTH_CLIENT_ID || '';
     const oauthClientSecret = process.env.GOOGLE_OAUTH_CLIENT_SECRET || '';
 
     // 1. Try User's Personal Google Account OAuth first
     const { accessToken, refreshToken } = await getGoogleTokens(userId);
     if (accessToken || refreshToken) {
-      console.log(`[Trada Backup] Authenticating with user's personal Google Account for userId: ${userId}`);
+      authMethod = `Personal OAuth (userId: ${userId})`;
+      if (accessToken) {
+        try {
+          const tokenInfoRes = await fetch(`https://oauth2.googleapis.com/tokeninfo?access_token=${accessToken}`);
+          if (tokenInfoRes.ok) {
+            const info = await tokenInfoRes.json();
+            tokenScopes = info.scope ? info.scope.split(' ') : [];
+            tokenEmail = info.email || "";
+          } else {
+            console.warn(`[Trada Backup] TokenInfo API returned status: ${tokenInfoRes.status}`);
+          }
+        } catch (e: any) {
+          console.error('[Trada Backup] TokenInfo fetch error:', e);
+        }
+      }
+      console.log(`[Trada Backup] Authenticating with user's personal Google Account for userId: ${userId}. Scopes: ${tokenScopes.join(', ')}`);
       const oauth2Client = new google.auth.OAuth2(
         oauthClientId,
         oauthClientSecret,
@@ -56,6 +75,7 @@ export async function POST(request: Request) {
 
     } else {
       // 2. Fallback to Service Account
+      authMethod = "Service Account";
       console.log(`[Trada Backup] No personal Google connection found. Falling back to Google Service Account.`);
       const clientEmail = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
       const privateKey = process.env.GOOGLE_PRIVATE_KEY?.replace(/\\n/g, '\n');
@@ -112,6 +132,9 @@ export async function POST(request: Request) {
     } else if (errorMessage.includes('insufficientPermissions') || errorMessage.includes('forbidden')) {
       errorMessage = 'Google Drive izni yetersiz. Takvim sayfasından Google hesabınızı tekrar bağlayın ve Drive iznine onay verin.';
     }
+    
+    // Add debug context to error message
+    errorMessage = `${errorMessage} [Auth: ${authMethod}, Scopes: ${tokenScopes.length ? tokenScopes.join(', ') : 'none'}, Email: ${tokenEmail || 'N/A'}, Folder: ${process.env.GOOGLE_DRIVE_FOLDER_ID || 'none'}]`;
     
     return NextResponse.json({ error: errorMessage }, { status: 500 });
   }
