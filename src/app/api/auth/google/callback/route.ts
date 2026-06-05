@@ -9,6 +9,10 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: 'No code provided' }, { status: 400 });
   }
 
+  // Build redirect URI dynamically — must exactly match what was sent in the login step
+  const url = new URL(request.url);
+  const redirectUri = `${url.protocol}//${url.host}/api/auth/google/callback`;
+
   try {
     const response = await fetch('https://oauth2.googleapis.com/token', {
       method: 'POST',
@@ -17,7 +21,7 @@ export async function GET(request: Request) {
         code,
         client_id: config.clientId,
         client_secret: config.clientSecret,
-        redirect_uri: config.redirectUri,
+        redirect_uri: redirectUri,
         grant_type: 'authorization_code',
       }),
     });
@@ -32,7 +36,6 @@ export async function GET(request: Request) {
     // Set tokens in user-specific cookies
     const responseRedirect = NextResponse.redirect(new URL('/calendar', request.url));
     
-    // Store access token and refresh token in secure cookies named after the user
     responseRedirect.cookies.set(`google_access_token_${userId}`, data.access_token, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',

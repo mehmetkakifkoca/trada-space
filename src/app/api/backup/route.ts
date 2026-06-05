@@ -31,6 +31,10 @@ export async function POST(request: Request) {
 
     let drive;
 
+    // Build redirect URI dynamically — must match what was used during the login flow
+    const reqUrl = new URL(request.url);
+    const redirectUri = `${reqUrl.protocol}//${reqUrl.host}/api/auth/google/callback`;
+
     // 1. Try User's Personal Google Account OAuth first (Highly recommended, has full storage quota)
     const { accessToken, refreshToken } = await getGoogleTokens(userId);
     if (accessToken || refreshToken) {
@@ -38,7 +42,7 @@ export async function POST(request: Request) {
       const oauth2Client = new google.auth.OAuth2(
         config.clientId,
         config.clientSecret,
-        config.redirectUri
+        redirectUri
       );
       // Pass BOTH tokens — googleapis will auto-refresh the access token using the refresh token if it has expired
       oauth2Client.setCredentials({
@@ -46,6 +50,7 @@ export async function POST(request: Request) {
         refresh_token: refreshToken,
       });
       drive = google.drive({ version: 'v3', auth: oauth2Client });
+
     } else {
       // 2. Fallback to Service Account
       console.log(`[Trada Backup] No personal Google connection found. Falling back to Google Service Account.`);
