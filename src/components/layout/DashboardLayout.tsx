@@ -43,15 +43,29 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
       ["ceo", "co founder", "admin", "administrator"].includes(role);
     if (!isUserAdmin) return;
 
-    const performBackup = () => {
+    // Track in-flight requests to prevent concurrent backup calls
+    let isRunning = false;
+
+    const performBackup = async () => {
       const enableAuto = invoiceSettings?.enableAutoBackup ?? true;
       if (!enableAuto) return;
 
-      const lastBackup = localStorage.getItem("last-gdrive-backup");
+      // Already running? skip
+      if (isRunning) return;
+
       const today = new Date().toISOString().split("T")[0];
 
       // If already successfully backed up today, skip
+      const lastBackup = localStorage.getItem("last-gdrive-backup");
       if (lastBackup === today) return;
+
+      // If last attempt failed recently, wait 1 hour before retrying (prevents spam)
+      const lastFailedAt = localStorage.getItem("last-gdrive-backup-failed-at");
+      if (lastFailedAt) {
+        const elapsed = Date.now() - parseInt(lastFailedAt, 10);
+        const oneHour = 60 * 60 * 1000;
+        if (elapsed < oneHour) return;
+      }
 
       // Configure backup time (default is 00:00)
       const [targetHour, targetMinute] = (invoiceSettings?.backupTime || "00:00").split(":").map(Number);
@@ -63,27 +77,33 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
       if (currentHour > targetHour || (currentHour === targetHour && currentMinute >= targetMinute)) {
         const data = localStorage.getItem("trada-data-storage");
         if (data) {
+          isRunning = true;
           console.log(`[Trada Backup] Auto-backup triggered at scheduled time ${invoiceSettings?.backupTime || "00:00"}`);
-          fetch(`/api/backup?userId=${user.id}`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ data: JSON.parse(data) }),
-          })
-          .then(res => res.json())
-          .then(res => {
-            if (res.success) {
+          try {
+            const res = await fetch(`/api/backup?userId=${user.id}`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ data: JSON.parse(data) }),
+            });
+            const result = await res.json();
+            if (result.success) {
               // Only mark as done today after a confirmed success
               localStorage.setItem("last-gdrive-backup", today);
-              console.log(`[Trada Backup] Automatic daily backup to Google Drive successful. File: ${res.fileName}`);
+              localStorage.removeItem("last-gdrive-backup-failed-at");
+              console.log(`[Trada Backup] Automatic daily backup successful. File: ${result.fileName}`);
             } else {
-              console.error("[Trada Backup] Daily automatic backup failed:", res.error);
-              toast.error(`Otomatik Google Drive yedekleme başarısız: ${res.error || "Bilinmeyen hata"}`);
+              console.error("[Trada Backup] Daily automatic backup failed:", result.error);
+              // Record failure timestamp so we wait 1 hour before next retry
+              localStorage.setItem("last-gdrive-backup-failed-at", String(Date.now()));
+              toast.error(result.error || "Otomatik Google Drive yedekleme başarısız oldu.", { duration: 8000 });
             }
-          })
-          .catch(err => {
+          } catch (err) {
             console.error("[Trada Backup] Network error during auto backup:", err);
-            toast.error("Otomatik yedekleme sırasında bağlantı hatası oluştu.");
-          });
+            localStorage.setItem("last-gdrive-backup-failed-at", String(Date.now()));
+            toast.error("Otomatik yedekleme sırasında bağlantı hatası oluştu.", { duration: 8000 });
+          } finally {
+            isRunning = false;
+          }
         }
       }
     };
@@ -91,8 +111,8 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
     // Run check immediately on load/render
     performBackup();
 
-    // Run check every 30 seconds to catch scheduled time transition
-    const interval = setInterval(performBackup, 30000);
+    // Run check every 60 seconds to catch scheduled time transition
+    const interval = setInterval(performBackup, 60000);
     return () => clearInterval(interval);
   }, [user, invoiceSettings]);
 
