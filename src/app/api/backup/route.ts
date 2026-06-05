@@ -76,10 +76,11 @@ export async function POST(request: Request) {
       drive = google.drive({ version: 'v3', auth });
     }
 
-      // Save to specific folder if configured
-      const folderId = process.env.GOOGLE_DRIVE_FOLDER_ID;
-      if (folderId) {
-        fileMetadata.parents = [folderId];
+      // For personal OAuth: upload to Drive root (avoids folder permission issues)
+      // For service account: use configured folder ID if available
+      if (!accessToken && !refreshToken) {
+        const folderId = process.env.GOOGLE_DRIVE_FOLDER_ID;
+        if (folderId) fileMetadata.parents = [folderId];
       }
 
     const jsonString = JSON.stringify(data, null, 2);
