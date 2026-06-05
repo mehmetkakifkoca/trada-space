@@ -76,10 +76,11 @@ export async function POST(request: Request) {
       drive = google.drive({ version: 'v3', auth });
     }
 
-    const folderId = process.env.GOOGLE_DRIVE_FOLDER_ID;
-    if (folderId) {
-      fileMetadata.parents = [folderId];
-    }
+      // Only use the folder ID with service account — it belongs to the SA's drive, not the user's
+      const folderId = process.env.GOOGLE_DRIVE_FOLDER_ID;
+      if (folderId && !accessToken && !refreshToken) {
+        fileMetadata.parents = [folderId];
+      }
 
     const jsonString = JSON.stringify(data, null, 2);
     const stream = Readable.from(Buffer.from(jsonString, 'utf-8'));
