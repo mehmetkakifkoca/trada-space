@@ -4,28 +4,11 @@ import { Readable } from 'stream';
 import { cookies } from 'next/headers';
 import config from '@/config/google-calendar.json';
 
-async function getPersonalAccessToken(userId: string) {
+async function getGoogleTokens(userId: string): Promise<{ accessToken?: string; refreshToken?: string }> {
   const cookieStore = await cookies();
-  let accessToken = cookieStore.get(`google_access_token_${userId}`)?.value;
+  const accessToken = cookieStore.get(`google_access_token_${userId}`)?.value;
   const refreshToken = cookieStore.get(`google_refresh_token_${userId}`)?.value;
-
-  if (!accessToken && refreshToken) {
-    try {
-      const response = await fetch('https://oauth2.googleapis.com/token', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: new URLSearchParams({
-          refresh_token: refreshToken,
-          client_id: config.clientId,
-          client_secret: config.clientSecret,
-          grant_type: 'refresh_token',
-        }),
-      });
-      const data = await response.json();
-      if (data.access_token) accessToken = data.access_token;
-    } catch (e) {}
-  }
-  return accessToken;
+  return { accessToken, refreshToken };
 }
 
 export async function POST(request: Request) {
@@ -49,25 +32,29 @@ export async function POST(request: Request) {
     let drive;
 
     // 1. Try User's Personal Google Account OAuth first (Highly recommended, has full storage quota)
-    const personalAccessToken = await getPersonalAccessToken(userId);
-    if (personalAccessToken) {
+    const { accessToken, refreshToken } = await getGoogleTokens(userId);
+    if (accessToken || refreshToken) {
       console.log(`[Trada Backup] Authenticating with user's personal Google Account for userId: ${userId}`);
       const oauth2Client = new google.auth.OAuth2(
         config.clientId,
         config.clientSecret,
         config.redirectUri
       );
-      oauth2Client.setCredentials({ access_token: personalAccessToken });
+      // Pass BOTH tokens — googleapis will auto-refresh the access token using the refresh token if it has expired
+      oauth2Client.setCredentials({
+        access_token: accessToken,
+        refresh_token: refreshToken,
+      });
       drive = google.drive({ version: 'v3', auth: oauth2Client });
     } else {
-      // 2. Fallback to Service Account (Can fail on standard folders due to 0 quota restriction on new service accounts)
+      // 2. Fallback to Service Account
       console.log(`[Trada Backup] No personal Google connection found. Falling back to Google Service Account.`);
       const clientEmail = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
       const privateKey = process.env.GOOGLE_PRIVATE_KEY?.replace(/\\n/g, '\n');
 
       if (!clientEmail || !privateKey) {
         return NextResponse.json({ 
-          error: 'Verbinden Sie zuerst Ihr Google-Konto im Kalender-Bereich, um Google Drive Backups zu aktivieren (Service Account Zugangsdaten fehlen).' 
+          error: 'Google hesabınızı Takvim bölümünden yeniden bağlayın ve ardından tekrar deneyin.' 
         }, { status: 400 });
       }
 
@@ -108,10 +95,14 @@ export async function POST(request: Request) {
     });
   } catch (error: any) {
     console.error('Backup API Exception:', error);
-    let errorMessage = error.message || 'Verbindung zu Google Drive fehlgeschlagen.';
+    let errorMessage = error.message || 'Google Drive bağlantısı başarısız.';
     
-    if (errorMessage.includes("storage quota")) {
-      errorMessage = "Google Service Account hat kein Speicherkontingent. Bitte verbinden Sie Ihr persönliches Google-Konto im Kalender-Bereich mit Trada Space neu, um Backups direkt in Ihrem eigenen Drive zu speichern.";
+    if (errorMessage.includes('invalid_grant') || errorMessage.includes('account not found')) {
+      errorMessage = 'Google hesap bağlantısı süresi dolmuş. Lütfen Takvim sayfasına gidin ve Google hesabınızı yeniden bağlayın.';
+    } else if (errorMessage.includes('storage quota')) {
+      errorMessage = 'Google Drive depolama alanı yetersiz. Kişisel Google hesabınızı Takvim bölümünden yeniden bağlayın.';
+    } else if (errorMessage.includes('insufficientPermissions') || errorMessage.includes('forbidden')) {
+      errorMessage = 'Google Drive izni yetersiz. Takvim sayfasından Google hesabınızı tekrar bağlayın ve Drive iznine onay verin.';
     }
     
     return NextResponse.json({ error: errorMessage }, { status: 500 });
