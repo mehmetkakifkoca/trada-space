@@ -9,6 +9,7 @@ import { Menu, X, Bell, LogOut, Home, UserCircle, Check, Info } from "lucide-rea
 import { useDataStore } from "@/store/data-store";
 import Link from "next/link";
 import { auth } from "@/lib/firebase";
+import { toast } from "sonner";
 
 export function DashboardLayout({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, isLoading, user } = useAuthStore();
@@ -35,8 +36,12 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
   // Automatic Daily Google Drive Backup for CEO/Admin with configurable time schedule
   useEffect(() => {
     if (!user) return;
-    const isUserCEO = user.role?.toLowerCase() === "ceo" || user.role?.toLowerCase() === "superadmin";
-    if (!isUserCEO) return;
+    // Match the same role check used in the Settings page
+    const role = user.role?.toLowerCase() || "";
+    const isUserAdmin =
+      role === "superadmin" ||
+      ["ceo", "co founder", "admin", "administrator"].includes(role);
+    if (!isUserAdmin) return;
 
     const performBackup = () => {
       const enableAuto = invoiceSettings?.enableAutoBackup ?? true;
@@ -44,8 +49,8 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
 
       const lastBackup = localStorage.getItem("last-gdrive-backup");
       const today = new Date().toISOString().split("T")[0];
-      
-      // If already backed up today, skip
+
+      // If already successfully backed up today, skip
       if (lastBackup === today) return;
 
       // Configure backup time (default is 00:00)
@@ -67,13 +72,18 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
           .then(res => res.json())
           .then(res => {
             if (res.success) {
+              // Only mark as done today after a confirmed success
               localStorage.setItem("last-gdrive-backup", today);
               console.log(`[Trada Backup] Automatic daily backup to Google Drive successful. File: ${res.fileName}`);
             } else {
               console.error("[Trada Backup] Daily automatic backup failed:", res.error);
+              toast.error(`Otomatik Google Drive yedekleme başarısız: ${res.error || "Bilinmeyen hata"}`);
             }
           })
-          .catch(err => console.error("[Trada Backup] Network error during auto backup:", err));
+          .catch(err => {
+            console.error("[Trada Backup] Network error during auto backup:", err);
+            toast.error("Otomatik yedekleme sırasında bağlantı hatası oluştu.");
+          });
         }
       }
     };
