@@ -1,5 +1,4 @@
 import { NextResponse } from 'next/server';
-import config from '@/config/google-calendar.json';
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
@@ -7,6 +6,13 @@ export async function GET(request: Request) {
 
   if (!code) {
     return NextResponse.json({ error: 'No code provided' }, { status: 400 });
+  }
+
+  const clientId = process.env.GOOGLE_OAUTH_CLIENT_ID;
+  const clientSecret = process.env.GOOGLE_OAUTH_CLIENT_SECRET;
+
+  if (!clientId || !clientSecret) {
+    return NextResponse.json({ error: 'Google OAuth not configured' }, { status: 500 });
   }
 
   // Build redirect URI dynamically — must exactly match what was sent in the login step
@@ -19,8 +25,8 @@ export async function GET(request: Request) {
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({
         code,
-        client_id: config.clientId,
-        client_secret: config.clientSecret,
+        client_id: clientId,
+        client_secret: clientSecret,
         redirect_uri: redirectUri,
         grant_type: 'authorization_code',
       }),
@@ -33,7 +39,6 @@ export async function GET(request: Request) {
       return NextResponse.json(data, { status: 400 });
     }
 
-    // Set tokens in user-specific cookies
     const responseRedirect = NextResponse.redirect(new URL('/calendar', request.url));
     
     responseRedirect.cookies.set(`google_access_token_${userId}`, data.access_token, {
@@ -47,7 +52,7 @@ export async function GET(request: Request) {
       responseRedirect.cookies.set(`google_refresh_token_${userId}`, data.refresh_token, {
         httpOnly: true,
         secure: process.env.NODE_ENV === 'production',
-        maxAge: 30 * 24 * 60 * 60, // 30 days
+        maxAge: 30 * 24 * 60 * 60,
         path: '/',
       });
     }

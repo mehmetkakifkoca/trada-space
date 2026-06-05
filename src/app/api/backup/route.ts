@@ -2,7 +2,6 @@ import { NextResponse } from 'next/server';
 import { google } from 'googleapis';
 import { Readable } from 'stream';
 import { cookies } from 'next/headers';
-import config from '@/config/google-calendar.json';
 
 async function getGoogleTokens(userId: string): Promise<{ accessToken?: string; refreshToken?: string }> {
   const cookieStore = await cookies();
@@ -34,14 +33,16 @@ export async function POST(request: Request) {
     // Build redirect URI dynamically — must match what was used during the login flow
     const reqUrl = new URL(request.url);
     const redirectUri = `${reqUrl.protocol}//${reqUrl.host}/api/auth/google/callback`;
+    const oauthClientId = process.env.GOOGLE_OAUTH_CLIENT_ID || '';
+    const oauthClientSecret = process.env.GOOGLE_OAUTH_CLIENT_SECRET || '';
 
-    // 1. Try User's Personal Google Account OAuth first (Highly recommended, has full storage quota)
+    // 1. Try User's Personal Google Account OAuth first
     const { accessToken, refreshToken } = await getGoogleTokens(userId);
     if (accessToken || refreshToken) {
       console.log(`[Trada Backup] Authenticating with user's personal Google Account for userId: ${userId}`);
       const oauth2Client = new google.auth.OAuth2(
-        config.clientId,
-        config.clientSecret,
+        oauthClientId,
+        oauthClientSecret,
         redirectUri
       );
       // Pass BOTH tokens — googleapis will auto-refresh the access token using the refresh token if it has expired

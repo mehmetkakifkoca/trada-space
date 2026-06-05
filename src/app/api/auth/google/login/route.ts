@@ -1,9 +1,13 @@
 import { NextResponse } from 'next/server';
-import config from '@/config/google-calendar.json';
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const userId = searchParams.get('userId') || 'default';
+
+  const clientId = process.env.GOOGLE_OAUTH_CLIENT_ID;
+  if (!clientId) {
+    return NextResponse.json({ error: 'Google OAuth not configured' }, { status: 500 });
+  }
 
   // Build the redirect URI dynamically so it works on localhost AND production
   const url = new URL(request.url);
@@ -13,7 +17,7 @@ export async function GET(request: Request) {
   
   const options = {
     redirect_uri: redirectUri,
-    client_id: config.clientId,
+    client_id: clientId,
     access_type: 'offline',
     response_type: 'code',
     prompt: 'consent',
