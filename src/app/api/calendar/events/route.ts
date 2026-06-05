@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
-import config from '@/config/google-calendar.json';
 
 async function getAccessToken(userId: string) {
   const cookieStore = await cookies();
@@ -8,23 +7,19 @@ async function getAccessToken(userId: string) {
   const refreshToken = cookieStore.get(`google_refresh_token_${userId}`)?.value;
 
   if (!accessToken && refreshToken) {
-    // Refresh the token
     try {
       const response = await fetch('https://oauth2.googleapis.com/token', {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
         body: new URLSearchParams({
           refresh_token: refreshToken,
-          client_id: config.clientId,
-          client_secret: config.clientSecret,
+          client_id: process.env.GOOGLE_OAUTH_CLIENT_ID || '',
+          client_secret: process.env.GOOGLE_OAUTH_CLIENT_SECRET || '',
           grant_type: 'refresh_token',
         }),
       });
-
       const data = await response.json();
-      if (data.access_token) {
-        accessToken = data.access_token;
-      }
+      if (data.access_token) accessToken = data.access_token;
     } catch (e) {}
   }
 

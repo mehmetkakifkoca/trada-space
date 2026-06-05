@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
-import config from '@/config/google-calendar.json';
 
 async function getAccessToken() {
   const cookieStore = await cookies();
@@ -13,8 +12,8 @@ async function getAccessToken() {
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({
         refresh_token: refreshToken,
-        client_id: config.clientId,
-        client_secret: config.clientSecret,
+        client_id: process.env.GOOGLE_OAUTH_CLIENT_ID || '',
+        client_secret: process.env.GOOGLE_OAUTH_CLIENT_SECRET || '',
         grant_type: 'refresh_token',
       }),
     });
