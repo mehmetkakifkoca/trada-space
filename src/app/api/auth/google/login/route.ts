@@ -9,17 +9,8 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: 'Google OAuth not configured' }, { status: 500 });
   }
 
-  // x-forwarded-host is set by Vercel with the actual public domain (e.g. trada.rostr.space)
-  // This takes priority over everything else
-  const forwardedHost = request.headers.get('x-forwarded-host');
-  const forwardedProto = request.headers.get('x-forwarded-proto') || 'https';
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL;
-  const reqUrl = new URL(request.url);
-  const baseUrl = forwardedHost
-    ? `${forwardedProto}://${forwardedHost}`
-    : appUrl
-    ? appUrl.replace(/\/$/, '')
-    : `${reqUrl.protocol}//${reqUrl.host}`;
+  // Use NEXT_PUBLIC_APP_URL on production, localhost for local dev
+  const baseUrl = (process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000').replace(/\/$/, '');
   const redirectUri = `${baseUrl}/api/auth/google/callback`;
 
   const rootUrl = 'https://accounts.google.com/o/oauth2/v2/auth';

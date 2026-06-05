@@ -30,17 +30,10 @@ export async function POST(request: Request) {
 
     let drive;
 
-    // x-forwarded-host is set by Vercel with the actual public domain
-    const forwardedHost = request.headers.get('x-forwarded-host');
-    const forwardedProto = request.headers.get('x-forwarded-proto') || 'https';
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL;
-    const reqUrl = new URL(request.url);
-    const baseUrl = forwardedHost
-      ? `${forwardedProto}://${forwardedHost}`
-      : appUrl
-      ? appUrl.replace(/\/$/, '')
-      : `${reqUrl.protocol}//${reqUrl.host}`;
+    // Use NEXT_PUBLIC_APP_URL on production, localhost for local dev
+    const baseUrl = (process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000').replace(/\/$/, '');
     const redirectUri = `${baseUrl}/api/auth/google/callback`;
+
 
     const oauthClientId = process.env.GOOGLE_OAUTH_CLIENT_ID || '';
     const oauthClientSecret = process.env.GOOGLE_OAUTH_CLIENT_SECRET || '';
