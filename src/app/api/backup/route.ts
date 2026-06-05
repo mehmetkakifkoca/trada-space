@@ -99,7 +99,7 @@ export async function POST(request: Request) {
       success: true, 
       fileId: response.data.id,
       fileName: response.data.name,
-      isPersonal: !!personalAccessToken
+      isPersonal: !!accessToken
     });
   } catch (error: any) {
     console.error('Backup API Exception:', error);
