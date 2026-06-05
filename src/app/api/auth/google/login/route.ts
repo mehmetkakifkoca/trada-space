@@ -9,15 +9,16 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: 'Google OAuth not configured' }, { status: 500 });
   }
 
-  // Build redirect URI: prefer NEXT_PUBLIC_APP_URL, then x-forwarded-host (Vercel), then request.url
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL;
+  // x-forwarded-host is set by Vercel with the actual public domain (e.g. trada.rostr.space)
+  // This takes priority over everything else
   const forwardedHost = request.headers.get('x-forwarded-host');
   const forwardedProto = request.headers.get('x-forwarded-proto') || 'https';
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL;
   const reqUrl = new URL(request.url);
-  const baseUrl = appUrl
-    ? appUrl.replace(/\/$/, '')
-    : forwardedHost
+  const baseUrl = forwardedHost
     ? `${forwardedProto}://${forwardedHost}`
+    : appUrl
+    ? appUrl.replace(/\/$/, '')
     : `${reqUrl.protocol}//${reqUrl.host}`;
   const redirectUri = `${baseUrl}/api/auth/google/callback`;
 
