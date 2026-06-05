@@ -15,9 +15,17 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: 'Google OAuth not configured' }, { status: 500 });
   }
 
-  // Build redirect URI dynamically — must exactly match what was sent in the login step
-  const url = new URL(request.url);
-  const redirectUri = `${url.protocol}//${url.host}/api/auth/google/callback`;
+  // Build redirect URI: prefer NEXT_PUBLIC_APP_URL, then x-forwarded-host (Vercel), then request.url
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL;
+  const forwardedHost = request.headers.get('x-forwarded-host');
+  const forwardedProto = request.headers.get('x-forwarded-proto') || 'https';
+  const reqUrl = new URL(request.url);
+  const baseUrl = appUrl
+    ? appUrl.replace(/\/$/, '')
+    : forwardedHost
+    ? `${forwardedProto}://${forwardedHost}`
+    : `${reqUrl.protocol}//${reqUrl.host}`;
+  const redirectUri = `${baseUrl}/api/auth/google/callback`;
 
   try {
     const response = await fetch('https://oauth2.googleapis.com/token', {
