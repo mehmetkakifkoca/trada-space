@@ -11,6 +11,10 @@ async function getGoogleTokens(userId: string): Promise<{ accessToken?: string; 
 }
 
 export async function POST(request: Request) {
+  let authMethod = "None";
+  let tokenScopes: string[] = [];
+  let tokenEmail = "";
+
   try {
     const { searchParams } = new URL(request.url);
     const userId = searchParams.get('userId') || 'default';
@@ -34,10 +38,6 @@ export async function POST(request: Request) {
     const baseUrl = (process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000').replace(/\/$/, '');
     const redirectUri = `${baseUrl}/api/auth/google/callback`;
 
-
-    let authMethod = "None";
-    let tokenScopes: string[] = [];
-    let tokenEmail = "";
 
     const oauthClientId = process.env.GOOGLE_OAUTH_CLIENT_ID || '';
     const oauthClientSecret = process.env.GOOGLE_OAUTH_CLIENT_SECRET || '';
