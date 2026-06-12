@@ -7,24 +7,11 @@ export interface PaymentStatus {
 }
 
 export const SYSTEM_CATEGORIES = [
-  "Social Media",
-  "Video & Photography",
-  "Design & Grafik",
-  "Website & IT",
-  "Print & Tabela",
-  "Marketing & Ads",
-  "Software & Tools",
-  "Hardware & Equipment",
-  "Material & Production",
-  "Reisekosten",
-  "Bewirtung",
-  "Freelancer & Dienstleister",
-  "Consulting",
-  "Sonstiges",
-  "Mitarbeiterkosten",
-  "Büro",
-  "Intern",
-  "Marketing"
+  "Grafik/Druck",
+  "Web Design/SEO",
+  "Online Marketing",
+  "Foto/Video",
+  "Medya Avusturya"
 ] as const;
 
 export const LEISTUNGS_CATEGORIES = [

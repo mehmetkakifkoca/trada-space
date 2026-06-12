@@ -83,7 +83,7 @@ export default function ExpensesPage() {
 
   const [formData, setFormData] = useState<Partial<Expense>>({
     title: "",
-    category: "Software",
+    category: "Grafik/Druck",
     amount: 0,
     date: new Date().toISOString().split('T')[0],
     status: "Bezahlt",
@@ -100,13 +100,11 @@ export default function ExpensesPage() {
   const categories = SYSTEM_CATEGORIES.map(name => {
     let icon = ShoppingBag;
     let color = "text-gray-500 bg-gray-50";
-    if (name.includes("Software")) { icon = Zap; color = "text-blue-500 bg-blue-50"; }
-    else if (name.includes("Marketing")) { icon = Zap; color = "text-indigo-500 bg-indigo-50"; }
-    else if (name.includes("Bewirtung")) { icon = Coffee; color = "text-orange-500 bg-orange-50"; }
-    else if (name.includes("Reisekosten") || name.includes("Travel")) { icon = Car; color = "text-emerald-500 bg-emerald-50"; }
-    else if (name.includes("Hardware")) { icon = Zap; color = "text-purple-500 bg-purple-50"; }
-    else if (name.includes("Design") || name.includes("Video")) { color = "text-pink-500 bg-pink-50"; }
-    else if (name.includes("Social")) { color = "text-cyan-500 bg-cyan-50"; }
+    if (name === "Grafik/Druck") { icon = Zap; color = "text-pink-500 bg-pink-50"; }
+    else if (name === "Web Design/SEO") { icon = Zap; color = "text-blue-500 bg-blue-50"; }
+    else if (name === "Online Marketing") { icon = Zap; color = "text-orange-500 bg-orange-50"; }
+    else if (name === "Foto/Video") { icon = Zap; color = "text-purple-500 bg-purple-50"; }
+    else if (name === "Medya Avusturya") { icon = Zap; color = "text-emerald-500 bg-emerald-50"; }
     return { name, icon, color };
   });
 
@@ -191,7 +189,7 @@ export default function ExpensesPage() {
     // Reset Form
     setFormData({
       title: "",
-      category: "Software",
+      category: "Grafik/Druck",
       amount: 0,
       date: new Date().toISOString().split('T')[0],
       status: "Bezahlt",

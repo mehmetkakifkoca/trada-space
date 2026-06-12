@@ -293,7 +293,7 @@ function TasksTab({ project, isCEO }: any) {
 
   const [newTask, setNewTask] = useState<Partial<ProjectTask>>({
     title: "",
-    category: "Design",
+    category: "Grafik/Druck",
     status: "Open",
     assignedMemberIds: [],
     estimatedHours: 0,
@@ -308,7 +308,7 @@ function TasksTab({ project, isCEO }: any) {
       projectId: project.id
     });
     setIsAddModalOpen(false);
-    setNewTask({ title: "", category: "Design", status: "Open", assignedMemberIds: [], estimatedHours: 0, dueDate: "" });
+    setNewTask({ title: "", category: "Grafik/Druck", status: "Open", assignedMemberIds: [], estimatedHours: 0, dueDate: "" });
   };
 
   return (
@@ -470,7 +470,7 @@ function ExpensesTab({ project, isCEO }: any) {
 
   const [newExpense, setNewExpense] = useState<Partial<ProjectExpense>>({
     title: "",
-    category: "Material",
+    category: "Grafik/Druck",
     amount: 0,
     date: new Date().toISOString().split('T')[0],
     description: "",
@@ -509,7 +509,7 @@ function ExpensesTab({ project, isCEO }: any) {
     }
 
     setIsAddModalOpen(false);
-    setNewExpense({ title: "", category: "Material", amount: 0, date: new Date().toISOString().split('T')[0], status: "Unpaid", receiptUrl: "" });
+    setNewExpense({ title: "", category: "Grafik/Druck", amount: 0, date: new Date().toISOString().split('T')[0], status: "Unpaid", receiptUrl: "" });
     setSelectedGeneralId("");
   };
 
@@ -631,7 +631,7 @@ function ExpensesTab({ project, isCEO }: any) {
                  <button 
                    onClick={() => {
                      setIsAddModalOpen(false);
-                     setNewExpense({ title: "", category: "Material", amount: 0, date: new Date().toISOString().split('T')[0], status: "Unpaid", receiptUrl: "" });
+                      setNewExpense({ title: "", category: "Grafik/Druck", amount: 0, date: new Date().toISOString().split('T')[0], status: "Unpaid", receiptUrl: "" });
                      setSelectedGeneralId("");
                    }} 
                    className="flex-1 font-black uppercase text-[10px] tracking-widest text-gray-400"

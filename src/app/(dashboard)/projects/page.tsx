@@ -86,8 +86,8 @@ export default function ProjectsPage() {
   const [formData, setFormData] = useState<Partial<Project>>({
     name: "",
     customerId: "",
-    category: "Design & Grafik",
-    categories: ["Design & Grafik"],
+    category: "Grafik/Druck",
+    categories: ["Grafik/Druck"],
     status: "Active",
     revenue: 0,
     startDate: new Date().toISOString().split('T')[0],
@@ -171,8 +171,8 @@ export default function ProjectsPage() {
     setFormData({
       name: "",
       customerId: "",
-      category: "Design & Grafik",
-      categories: ["Design & Grafik"],
+      category: "Grafik/Druck",
+      categories: ["Grafik/Druck"],
       status: "Active",
       revenue: 0,
       startDate: new Date().toISOString().split('T')[0],
@@ -767,7 +767,7 @@ export default function ProjectsPage() {
                               setFormData({
                                 ...formData, 
                                 categories: next, 
-                                category: next[0] || "Design & Grafik"
+                                category: next[0] || "Grafik/Druck"
                               });
                             }}
                             className={`px-3 py-1.5 rounded-lg text-[9px] font-bold border transition-all ${
