@@ -43,7 +43,36 @@ export async function POST(request: Request) {
     const oauthClientSecret = process.env.GOOGLE_OAUTH_CLIENT_SECRET || '';
 
     // 1. Try User's Personal Google Account OAuth first
-    const { accessToken, refreshToken } = await getGoogleTokens(userId);
+    const { accessToken: rawAccessToken, refreshToken } = await getGoogleTokens(userId);
+    let accessToken = rawAccessToken;
+    let newAccessTokenFetched = false;
+
+    if (!accessToken && refreshToken) {
+      console.log(`[Trada Backup] Access token is missing/expired. Refreshing using refresh token...`);
+      try {
+        const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: new URLSearchParams({
+            refresh_token: refreshToken,
+            client_id: oauthClientId,
+            client_secret: oauthClientSecret,
+            grant_type: 'refresh_token',
+          }),
+        });
+        const tokenData = await tokenRes.json();
+        if (tokenData.access_token) {
+          accessToken = tokenData.access_token;
+          newAccessTokenFetched = true;
+          console.log(`[Trada Backup] Access token refreshed successfully.`);
+        } else {
+          console.error(`[Trada Backup] Refresh response error:`, tokenData);
+        }
+      } catch (e) {
+        console.error('[Trada Backup] Error refreshing access token:', e);
+      }
+    }
+
     if (accessToken || refreshToken) {
       authMethod = `Personal OAuth (userId: ${userId})`;
       if (accessToken) {
@@ -91,7 +120,7 @@ export async function POST(request: Request) {
           client_email: clientEmail,
           private_key: privateKey,
         },
-        scopes: ['https://www.googleapis.com/auth/drive.file'],
+        scopes: ['https://www.googleapis.com/auth/drive'],
       });
       drive = google.drive({ version: 'v3', auth });
     }
@@ -115,12 +144,23 @@ export async function POST(request: Request) {
 
     console.log(`Successfully uploaded backup! Google File ID: ${response.data.id}`);
 
-    return NextResponse.json({ 
+    const apiResponse = NextResponse.json({ 
       success: true, 
       fileId: response.data.id,
       fileName: response.data.name,
       isPersonal: !!accessToken
     });
+
+    if (newAccessTokenFetched && accessToken) {
+      apiResponse.cookies.set(`google_access_token_${userId}`, accessToken, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        maxAge: 3600, // 1 hour
+        path: '/',
+      });
+    }
+
+    return apiResponse;
   } catch (error: any) {
     console.error('Backup API Exception:', error);
     let errorMessage = error.message || 'Google Drive bağlantısı başarısız.';
