@@ -21,7 +21,7 @@ import { useDataStore } from "@/store/data-store";
 import { useAuthStore } from "@/store/auth-store";
 import { toast } from "sonner";
 import { auth } from "@/lib/firebase";
-import { Download, Upload } from "lucide-react";
+import { Download, Upload, Cloud, RotateCw, Loader2 } from "lucide-react";
 
 export default function SettingsPage() {
   const { invoiceSettings, updateInvoiceSettings, teamMembers, updateTeamMember } = useDataStore();
@@ -111,6 +111,119 @@ export default function SettingsPage() {
         toast.info("Vorschau geladen. Speichern nicht vergessen.");
       };
       reader.readAsDataURL(file);
+    }
+  };
+
+  // Firebase Backups States & Handlers
+  const [backups, setBackups] = useState<{ name: string; size: number; updated: string }[]>([]);
+  const [isLoadingBackups, setIsLoadingBackups] = useState(false);
+  const [isCloudBackingUp, setIsCloudBackingUp] = useState(false);
+  const [restoringBackup, setRestoringBackup] = useState<string | null>(null);
+  const [deletingBackup, setDeletingBackup] = useState<string | null>(null);
+
+  const fetchBackups = async () => {
+    setIsLoadingBackups(true);
+    try {
+      const res = await fetch("/api/backup");
+      if (res.ok) {
+        const data = await res.json();
+        setBackups(data);
+      } else {
+        console.error("Fehler beim Laden der Backups");
+      }
+    } catch (err) {
+      console.error("Netzwerkfehler beim Laden der Backups", err);
+    } finally {
+      setIsLoadingBackups(false);
+    }
+  };
+
+  useEffect(() => {
+    if (isCEO) {
+      fetchBackups();
+    }
+  }, [isCEO]);
+
+  const handleCloudBackup = async () => {
+    setIsCloudBackingUp(true);
+    try {
+      const data = localStorage.getItem("trada-data-storage");
+      if (!data) {
+        toast.error("Keine Daten zum Sichern gefunden.");
+        return;
+      }
+      const response = await fetch(`/api/backup?userId=${user?.id}&type=firebase`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ data: JSON.parse(data) }),
+      });
+      const result = await response.json();
+      if (result.success) {
+        toast.success("Backup erfolgreich in der Firebase Cloud gespeichert!");
+        localStorage.setItem("last-firebase-backup", new Date().toISOString().split("T")[0]);
+        fetchBackups();
+      } else {
+        toast.error(`Fehler: ${result.error || "Backup fehlgeschlagen"}`);
+      }
+    } catch (err) {
+      toast.error("Verbindung zum Backup-Server fehlgeschlagen.");
+    } finally {
+      setIsCloudBackingUp(false);
+    }
+  };
+
+  const handleDownloadBackup = (fileName: string) => {
+    window.location.href = `/api/backup?file=${fileName}`;
+  };
+
+  const handleRestoreBackup = async (fileName: string) => {
+    if (!confirm(`WARNUNG: Dies überschreibt Ihre gesamte aktuelle Datenbank mit dem Stand von "${fileName}"! Möchten Sie wirklich fortfahren?`)) {
+      return;
+    }
+
+    setRestoringBackup(fileName);
+    try {
+      const response = await fetch(`/api/backup?action=restore&file=${fileName}&userId=${user?.id}`, {
+        method: "POST"
+      });
+      const result = await response.json();
+      if (result.success && result.data) {
+        localStorage.setItem("trada-data-storage", JSON.stringify({ state: result.data.state || result.data }));
+        toast.success("Backup erfolgreich wiederhergestellt! Lade neu...");
+        setTimeout(() => {
+          window.location.reload();
+        }, 1500);
+      } else {
+        toast.error(`Wiederherstellung fehlgeschlagen: ${result.error || "Unbekannter Fehler"}`);
+      }
+    } catch (err) {
+      toast.error("Verbindung zum Wiederherstellungs-Server fehlgeschlagen.");
+    } finally {
+      setRestoringBackup(null);
+    }
+  };
+
+  const handleDeleteBackup = async (fileName: string) => {
+    if (!confirm(`Möchten Sie das Backup "${fileName}" wirklich dauerhaft aus der Cloud löschen?`)) {
+      return;
+    }
+
+    setDeletingBackup(fileName);
+    try {
+      const response = await fetch(`/api/backup?file=${fileName}`, {
+        method: "DELETE"
+      });
+      const result = await response.json();
+      if (result.success) {
+        toast.success("Backup erfolgreich gelöscht.");
+        fetchBackups();
+      } else {
+        toast.error(`Fehler beim Löschen: ${result.error || "Unbekannter Fehler"}`);
+      }
+    } catch (err) {
+      toast.error("Verbindung zum Server failed.");
+    } finally {
+      setDeletingBackup(null);
     }
   };
 
@@ -370,14 +483,14 @@ export default function SettingsPage() {
                    <Save className="h-5 w-5 text-gray-400" />
                    <h3 className="text-xs font-bold text-gray-400 uppercase tracking-widest">Datenbank Backup</h3>
                 </div>
-                <p className="text-sm text-gray-500">Da die Daten aktuell lokal gespeichert werden, sollten Sie regelmäßig ein Backup herunterladen, um Datenverlust zu vermeiden.</p>
+                <p className="text-sm text-gray-500">Die Systemdaten werden in Echtzeit mit der Cloud synchronisiert. Sie können hier manuelle Backups erstellen, automatische Backups verwalten oder frühere Datenbank-Stände direkt wiederherstellen.</p>
                 
                 {/* Auto-Backup Configurations */}
                 <div className="bg-gray-50 rounded-3xl p-6 border border-gray-100 space-y-6">
                   <div className="flex items-center justify-between">
                     <div>
-                      <h4 className="text-sm font-black text-gray-900">Tägliches Google Drive Auto-Backup</h4>
-                      <p className="text-[10px] text-gray-400 font-bold uppercase tracking-wide mt-1">Sichert Ihre Datenbank automatisch in Ihr Google Drive.</p>
+                      <h4 className="text-sm font-black text-gray-900">Tägliches Firebase Cloud Auto-Backup</h4>
+                      <p className="text-[10px] text-gray-400 font-bold uppercase tracking-wide mt-1">Sichert Ihre Datenbank vollautomatisch im gesicherten Firebase Cloud Storage.</p>
                     </div>
                     <label className="relative inline-flex items-center cursor-pointer">
                       <input 
@@ -412,7 +525,7 @@ export default function SettingsPage() {
                   )}
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
                   <button 
                     onClick={handleExportBackup}
                     className="flex items-center justify-center gap-2 py-4 bg-black text-white rounded-2xl text-[10px] font-black uppercase tracking-widest hover:scale-[1.02] transition-all"
@@ -420,18 +533,151 @@ export default function SettingsPage() {
                     <Download className="h-4 w-4" /> PC Exportieren
                   </button>
                   
-                  <label className="flex items-center justify-center gap-2 py-4 bg-gray-50 text-gray-900 border border-gray-200 rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-gray-100 cursor-pointer transition-all">
-                    <Upload className="h-4 w-4" /> PC Importieren
+                  <label className="flex items-center justify-center gap-2 py-4 bg-gray-50 text-gray-900 border border-gray-200 rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-gray-100 cursor-pointer transition-all text-center">
+                    <Upload className="h-4 w-4 inline-block mr-1" /> PC Importieren
                     <input type="file" accept=".json" className="hidden" onChange={handleImportBackup} />
                   </label>
+
+                  <button 
+                    onClick={handleCloudBackup}
+                    disabled={isCloudBackingUp}
+                    className="flex items-center justify-center gap-2 py-4 bg-emerald-50 text-emerald-600 border border-emerald-100 rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-emerald-100 hover:scale-[1.02] disabled:opacity-50 disabled:scale-100 transition-all"
+                  >
+                    {isCloudBackingUp ? (
+                      <>
+                        <Loader2 className="h-4 w-4 animate-spin" /> Sichern...
+                      </>
+                    ) : (
+                      <>
+                        <Cloud className="h-4 w-4" /> Cloud Sichern
+                      </>
+                    )}
+                  </button>
 
                   <button 
                     onClick={handleGDriveBackup}
                     disabled={isGdriveBackingUp}
                     className="flex items-center justify-center gap-2 py-4 bg-blue-50 text-blue-600 border border-blue-100 rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-blue-100 hover:scale-[1.02] disabled:opacity-50 disabled:scale-100 transition-all"
                   >
-                    <UploadCloud className="h-4 w-4" /> {isGdriveBackingUp ? "Sichern..." : "Google Drive"}
+                    {isGdriveBackingUp ? (
+                      <>
+                        <Loader2 className="h-4 w-4 animate-spin" /> Sichern...
+                      </>
+                    ) : (
+                      <>
+                        <UploadCloud className="h-4 w-4" /> Google Drive
+                      </>
+                    )}
                   </button>
+                </div>
+
+                {/* Firebase Cloud Backups History Manager */}
+                <div className="pt-6 border-t border-gray-100 space-y-6">
+                  <div>
+                    <h4 className="text-sm font-black text-gray-900">Backup-Verlauf (Firebase Cloud)</h4>
+                    <p className="text-[10px] text-gray-400 font-bold uppercase tracking-wide mt-1">Verwalten Sie Ihre in der Firebase-Cloud gesicherten Systemstände.</p>
+                  </div>
+
+                  {isLoadingBackups ? (
+                    <div className="py-10 flex flex-col items-center justify-center text-gray-400">
+                      <Loader2 className="h-8 w-8 animate-spin text-gray-300 mb-2" />
+                      <span className="text-[10px] font-bold uppercase tracking-widest">Lade Backups...</span>
+                    </div>
+                  ) : backups.length === 0 ? (
+                    <div className="py-10 border-2 border-dashed border-gray-100 rounded-3xl flex flex-col items-center justify-center text-gray-400">
+                      <Cloud className="h-10 w-10 text-gray-200 mb-2" />
+                      <span className="text-xs font-bold text-gray-400">Keine Cloud-Backups vorhanden</span>
+                      <p className="text-[10px] text-gray-400 mt-1 uppercase tracking-wide">Klicken Sie auf &quot;Cloud Sichern&quot;, um ein Backup zu erstellen.</p>
+                    </div>
+                  ) : (
+                    <div className="overflow-hidden border border-gray-100 rounded-3xl bg-gray-50/50">
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-left border-collapse">
+                          <thead>
+                            <tr className="border-b border-gray-100 bg-gray-50">
+                              <th className="p-4 text-[10px] font-black text-gray-400 uppercase tracking-widest">Datum & Uhrzeit</th>
+                              <th className="p-4 text-[10px] font-black text-gray-400 uppercase tracking-widest">Dateigröße</th>
+                              <th className="p-4 text-[10px] font-black text-gray-400 uppercase tracking-widest text-right">Aktionen</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-gray-50">
+                            {backups.map((backup) => {
+                              // Helper to format date
+                              const formatDate = (dateStr: string) => {
+                                try {
+                                  return new Date(dateStr).toLocaleString("de-DE", {
+                                    day: "2-digit",
+                                    month: "2-digit",
+                                    year: "numeric",
+                                    hour: "2-digit",
+                                    minute: "2-digit"
+                                  });
+                                } catch (e) {
+                                  return dateStr;
+                                }
+                              };
+
+                              // Helper to format size
+                              const formatSize = (bytes: number) => {
+                                if (bytes === 0) return "0 Bytes";
+                                const k = 1024;
+                                const sizes = ["Bytes", "KB", "MB"];
+                                const i = Math.floor(Math.log(bytes) / Math.log(k));
+                                return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + " " + sizes[i];
+                              };
+
+                              return (
+                                <tr key={backup.name} className="hover:bg-white transition-colors">
+                                  <td className="p-4 text-xs font-bold text-gray-900">
+                                    {formatDate(backup.updated)}
+                                  </td>
+                                  <td className="p-4 text-xs font-medium text-gray-500">
+                                    {formatSize(backup.size)}
+                                  </td>
+                                  <td className="p-4 text-right flex items-center justify-end gap-2">
+                                    <button
+                                      onClick={() => handleRestoreBackup(backup.name)}
+                                      disabled={restoringBackup !== null || deletingBackup !== null}
+                                      className="flex items-center gap-1.5 px-3 py-2 bg-emerald-50 text-emerald-600 hover:bg-emerald-100 rounded-xl text-[10px] font-bold tracking-wide transition-all disabled:opacity-50"
+                                    >
+                                      {restoringBackup === backup.name ? (
+                                        <Loader2 className="h-3 w-3 animate-spin" />
+                                      ) : (
+                                        <RotateCw className="h-3 w-3" />
+                                      )}
+                                      Wiederherstellen
+                                    </button>
+
+                                    <button
+                                      onClick={() => handleDownloadBackup(backup.name)}
+                                      disabled={restoringBackup !== null || deletingBackup !== null}
+                                      className="flex items-center gap-1.5 px-3 py-2 bg-blue-50 text-blue-600 hover:bg-blue-100 rounded-xl text-[10px] font-bold tracking-wide transition-all disabled:opacity-50"
+                                    >
+                                      <Download className="h-3 w-3" />
+                                      Herunterladen
+                                    </button>
+
+                                    <button
+                                      onClick={() => handleDeleteBackup(backup.name)}
+                                      disabled={restoringBackup !== null || deletingBackup !== null}
+                                      className="flex items-center gap-1.5 px-3 py-2 bg-red-50 text-red-600 hover:bg-red-100 rounded-xl text-[10px] font-bold tracking-wide transition-all disabled:opacity-50"
+                                    >
+                                      {deletingBackup === backup.name ? (
+                                        <Loader2 className="h-3 w-3 animate-spin" />
+                                      ) : (
+                                        <Trash2 className="h-3 w-3" />
+                                      )}
+                                      Löschen
+                                    </button>
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </section>
             </div>

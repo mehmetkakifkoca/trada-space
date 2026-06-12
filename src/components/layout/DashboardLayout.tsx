@@ -33,7 +33,7 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
     window.location.href = "/login";
   };
 
-  // Automatic Daily Google Drive Backup for CEO/Admin with configurable time schedule
+  // Automatic Daily Firebase Cloud Backup for CEO/Admin with configurable time schedule
   useEffect(() => {
     if (!user) return;
     // Match the same role check used in the Settings page
@@ -56,11 +56,11 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
       const today = new Date().toISOString().split("T")[0];
 
       // If already successfully backed up today, skip
-      const lastBackup = localStorage.getItem("last-gdrive-backup");
+      const lastBackup = localStorage.getItem("last-firebase-backup");
       if (lastBackup === today) return;
 
       // If last attempt failed recently, wait 1 hour before retrying (prevents spam)
-      const lastFailedAt = localStorage.getItem("last-gdrive-backup-failed-at");
+      const lastFailedAt = localStorage.getItem("last-firebase-backup-failed-at");
       if (lastFailedAt) {
         const elapsed = Date.now() - parseInt(lastFailedAt, 10);
         const oneHour = 60 * 60 * 1000;
@@ -80,7 +80,7 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
           isRunning = true;
           console.log(`[Trada Backup] Auto-backup triggered at scheduled time ${invoiceSettings?.backupTime || "00:00"}`);
           try {
-            const res = await fetch(`/api/backup?userId=${user.id}`, {
+            const res = await fetch(`/api/backup?userId=${user.id}&type=firebase`, {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({ data: JSON.parse(data) }),
@@ -88,18 +88,18 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
             const result = await res.json();
             if (result.success) {
               // Only mark as done today after a confirmed success
-              localStorage.setItem("last-gdrive-backup", today);
-              localStorage.removeItem("last-gdrive-backup-failed-at");
+              localStorage.setItem("last-firebase-backup", today);
+              localStorage.removeItem("last-firebase-backup-failed-at");
               console.log(`[Trada Backup] Automatic daily backup successful. File: ${result.fileName}`);
             } else {
               console.error("[Trada Backup] Daily automatic backup failed:", result.error);
               // Record failure timestamp so we wait 1 hour before next retry
-              localStorage.setItem("last-gdrive-backup-failed-at", String(Date.now()));
-              toast.error(result.error || "Otomatik Google Drive yedekleme başarısız oldu.", { duration: 8000 });
+              localStorage.setItem("last-firebase-backup-failed-at", String(Date.now()));
+              toast.error(result.error || "Otomatik Firebase bulut yedekleme başarısız oldu.", { duration: 8000 });
             }
           } catch (err) {
             console.error("[Trada Backup] Network error during auto backup:", err);
-            localStorage.setItem("last-gdrive-backup-failed-at", String(Date.now()));
+            localStorage.setItem("last-firebase-backup-failed-at", String(Date.now()));
             toast.error("Otomatik yedekleme sırasında bağlantı hatası oluştu.", { duration: 8000 });
           } finally {
             isRunning = false;
