@@ -2,8 +2,7 @@ import { NextResponse } from 'next/server';
 import { google } from 'googleapis';
 import { Readable } from 'stream';
 import { cookies } from 'next/headers';
-import { adminDb, adminStorage } from '@/lib/firebase-admin';
-import path from 'path';
+import { adminDb } from '@/lib/firebase-admin';
 
 async function getGoogleTokens(userId: string): Promise<{ accessToken?: string; refreshToken?: string }> {
   const cookieStore = await cookies();
@@ -12,27 +11,28 @@ async function getGoogleTokens(userId: string): Promise<{ accessToken?: string; 
   return { accessToken, refreshToken };
 }
 
-// GET /api/backup: Lists backups in Firebase Storage OR downloads a specific backup file
+// GET /api/backup: Lists backups in Firestore OR downloads a specific backup file
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
     const fileParam = searchParams.get('file');
 
-    const bucketName = process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET || `${process.env.FIREBASE_PROJECT_ID}.appspot.com`;
-    const bucket = adminStorage.bucket(bucketName);
-
     if (fileParam) {
-      // Prevent directory traversal
-      const fileName = path.basename(fileParam);
-      const file = bucket.file(`backups/${fileName}`);
-
-      const [exists] = await file.exists();
-      if (!exists) {
+      const docRef = adminDb.collection('trada_backups').doc(fileParam);
+      const docSnap = await docRef.get();
+      if (!docSnap.exists) {
         return NextResponse.json({ error: 'Backup-Datei nicht gefunden.' }, { status: 404 });
       }
 
-      const [content] = await file.download();
-      return new Response(content.toString('utf-8'), {
+      const backupDoc = docSnap.data();
+      if (!backupDoc) {
+        return NextResponse.json({ error: 'Keine Daten gefunden.' }, { status: 404 });
+      }
+
+      const fileName = backupDoc.name || `${fileParam}.json`;
+      const jsonContent = JSON.stringify(backupDoc.data, null, 2);
+
+      return new Response(jsonContent, {
         headers: {
           'Content-Type': 'application/json',
           'Content-Disposition': `attachment; filename="${fileName}"`,
@@ -40,16 +40,16 @@ export async function GET(request: Request) {
       });
     }
 
-    // List files
-    const [files] = await bucket.getFiles({ prefix: 'backups/' });
-    const backupList = files
-      .filter(file => file.name !== 'backups/')
-      .map(file => ({
-        name: file.name.replace('backups/', ''),
-        size: parseInt(file.metadata.size?.toString() || '0', 10),
-        updated: String(file.metadata.updated || file.metadata.timeCreated || new Date().toISOString()),
-      }))
-      .sort((a, b) => new Date(b.updated).getTime() - new Date(a.updated).getTime());
+    // List files from Firestore collection trada_backups
+    const snapshot = await adminDb.collection('trada_backups').orderBy('updated', 'desc').get();
+    const backupList = snapshot.docs.map(doc => {
+      const data = doc.data();
+      return {
+        name: doc.id,
+        size: data.size || 0,
+        updated: data.updated || new Date().toISOString(),
+      };
+    });
 
     return NextResponse.json(backupList);
   } catch (error: any) {
@@ -58,7 +58,7 @@ export async function GET(request: Request) {
   }
 }
 
-// DELETE /api/backup?file=xxx: Deletes a backup from Firebase Storage
+// DELETE /api/backup?file=xxx: Deletes a backup from Firestore
 export async function DELETE(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
@@ -68,17 +68,13 @@ export async function DELETE(request: Request) {
       return NextResponse.json({ error: 'Dateiname fehlt.' }, { status: 400 });
     }
 
-    const fileName = path.basename(fileParam);
-    const bucketName = process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET || `${process.env.FIREBASE_PROJECT_ID}.appspot.com`;
-    const bucket = adminStorage.bucket(bucketName);
-    const file = bucket.file(`backups/${fileName}`);
-
-    const [exists] = await file.exists();
-    if (!exists) {
+    const docRef = adminDb.collection('trada_backups').doc(fileParam);
+    const docSnap = await docRef.get();
+    if (!docSnap.exists) {
       return NextResponse.json({ error: 'Backup-Datei nicht gefunden.' }, { status: 404 });
     }
 
-    await file.delete();
+    await docRef.delete();
     return NextResponse.json({ success: true });
   } catch (error: any) {
     console.error('[Backup API DELETE Error]:', error);
@@ -98,9 +94,6 @@ export async function POST(request: Request) {
     const action = searchParams.get('action');
     const type = searchParams.get('type') || 'firebase';
 
-    const bucketName = process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET || `${process.env.FIREBASE_PROJECT_ID}.appspot.com`;
-    const bucket = adminStorage.bucket(bucketName);
-
     // 1. Check if action is RESTORE
     if (action === 'restore') {
       const fileParam = searchParams.get('file');
@@ -108,22 +101,25 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: 'Dateiname fehlt.' }, { status: 400 });
       }
 
-      const fileName = path.basename(fileParam);
-      const file = bucket.file(`backups/${fileName}`);
-
-      const [exists] = await file.exists();
-      if (!exists) {
+      const docRef = adminDb.collection('trada_backups').doc(fileParam);
+      const docSnap = await docRef.get();
+      if (!docSnap.exists) {
         return NextResponse.json({ error: 'Backup-Datei nicht gefunden.' }, { status: 404 });
       }
 
-      const [content] = await file.download();
-      const parsedData = JSON.parse(content.toString('utf-8'));
+      const docData = docSnap.data();
+      if (!docData || !docData.data) {
+        return NextResponse.json({ error: 'Backup-Daten sind leer.' }, { status: 404 });
+      }
+
+      const backupData = docData.data;
+      const firestoreData = backupData.state ? backupData.state : backupData;
 
       // Overwrite global state in Firestore
-      const docRef = adminDb.collection('trada_app_data').doc('global_state');
-      await docRef.set(parsedData);
+      const docRefGlobal = adminDb.collection('trada_app_data').doc('global_state');
+      await docRefGlobal.set(firestoreData);
 
-      return NextResponse.json({ success: true, data: parsedData });
+      return NextResponse.json({ success: true, data: backupData });
     }
 
     // 2. Otherwise, check if type is FIREBASE
@@ -135,19 +131,22 @@ export async function POST(request: Request) {
 
       const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
       const fileName = `trada-space-backup-${timestamp}.json`;
-      const file = bucket.file(`backups/${fileName}`);
+      const docId = `backup-${timestamp}`;
 
       const jsonString = JSON.stringify(data, null, 2);
-      await file.save(jsonString, {
-        metadata: {
-          contentType: 'application/json',
-        },
+
+      const docRef = adminDb.collection('trada_backups').doc(docId);
+      await docRef.set({
+        name: fileName,
+        data: data,
+        size: jsonString.length,
+        updated: new Date().toISOString()
       });
 
-      console.log(`[Trada Backup] Successfully uploaded backup to Firebase Storage: backups/${fileName}`);
+      console.log(`[Trada Backup] Successfully saved backup to Firestore: trada_backups/${docId}`);
       return NextResponse.json({
         success: true,
-        fileName,
+        fileName: docId,
         isFirebase: true,
       });
     }
@@ -320,7 +319,7 @@ export async function POST(request: Request) {
     } else if (errorMessage.includes('storage quota')) {
       errorMessage = 'Google Drive depolama alanı yetersiz. Kişisel Google hesabınızı Takvim bölümünden yeniden bağlayın.';
     } else if (errorMessage.includes('insufficientPermissions') || errorMessage.includes('forbidden')) {
-      errorMessage = 'Google Drive izni yetersiz. Takvim sayfasından Google hesabınızı tekrar bağlayın ve Drive iznine onay verin.';
+      errorMessage = 'Google Drive izni yetersiz. Takvim sayfasından Google hesabınızı tekrar bağlayın und Drive iznine onay verin.';
     }
     
     errorMessage = `${errorMessage} [Auth: ${authMethod}, Scopes: ${tokenScopes.length ? tokenScopes.join(', ') : 'none'}, Email: ${tokenEmail || 'N/A'}, Folder: ${process.env.GOOGLE_DRIVE_FOLDER_ID || 'none'}]`;
