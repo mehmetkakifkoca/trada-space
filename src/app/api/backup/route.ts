@@ -132,15 +132,44 @@ export async function POST(request: Request) {
 
     const jsonString = JSON.stringify(data, null, 2);
     const stream = Readable.from(Buffer.from(jsonString, 'utf-8'));
+    let response;
 
-    const response = await drive.files.create({
-      requestBody: fileMetadata,
-      media: {
-        mimeType: 'application/json',
-        body: stream,
-      },
-      fields: 'id, name',
-    });
+    try {
+      response = await drive.files.create({
+        requestBody: fileMetadata,
+        media: {
+          mimeType: 'application/json',
+          body: stream,
+        },
+        fields: 'id, name',
+      });
+    } catch (createError: any) {
+      // If the target folder is not found or is inaccessible (e.g. not shared with user),
+      // upload the backup file to the root directory instead.
+      const isNotFoundError = createError.message?.includes('File not found') || 
+                            createError.status === 404 || 
+                            createError.code === 404;
+                            
+      if (fileMetadata.parents && isNotFoundError) {
+        console.warn(`[Trada Backup] Target folder ${folderId} was not found or is inaccessible. Falling back to root...`);
+        const fallbackMetadata = { ...fileMetadata };
+        delete fallbackMetadata.parents;
+        
+        // Recreate the stream as it might have been consumed/closed in the failed attempt
+        const streamFallback = Readable.from(Buffer.from(jsonString, 'utf-8'));
+        
+        response = await drive.files.create({
+          requestBody: fallbackMetadata,
+          media: {
+            mimeType: 'application/json',
+            body: streamFallback,
+          },
+          fields: 'id, name',
+        });
+      } else {
+        throw createError;
+      }
+    }
 
     console.log(`Successfully uploaded backup! Google File ID: ${response.data.id}`);
 
